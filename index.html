@@ -231,6 +231,10 @@ dialog::backdrop{background:rgba(5,10,20,.55)}
 #lgEntrar{width:100%;justify-content:center;padding:11px;font-size:16px}
 .login-rodape{font-size:13px}
 #fbArea form{display:flex;flex-direction:column;gap:12px}
+.lg-opcoes{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:14px}
+.lg-opcoes label{display:flex;align-items:center;gap:6px;cursor:pointer}
+.login-form .lg-opcoes input{width:18px;height:18px;padding:0;margin:0;flex:none;accent-color:var(--blue)}
+.lg-opcoes label{white-space:nowrap}
 .lg-link{background:none;border:0;color:var(--blue);padding:4px 0;justify-content:center;text-decoration:underline;cursor:pointer}
 @media (max-width:640px){.login-box{grid-template-columns:1fr}.login-marca{padding:24px}.login-marca b{font-size:20px}.login-form{padding:24px}}
 </style>
@@ -244,6 +248,7 @@ dialog::backdrop{background:rgba(5,10,20,.55)}
     </div>
     <button class="btn sino" id="sino" type="button" aria-label="Notificações">🔔 <span class="txt">Notificações</span><span class="badge" id="badge" data-n="0">0</span></button>
     <button class="btn sino" id="temaBtn" type="button" aria-label="Tema">🌓 <span class="txt" id="temaTxt">Tema: automático</span></button>
+    <button class="btn sino" id="sairBtn" type="button" aria-label="Sair" hidden>🚪 <span class="txt">Sair</span></button>
     <button class="btn menu-btn" id="menuBtn" aria-expanded="false" aria-controls="nav">Menu</button>
     <nav class="nav" id="nav" aria-label="Seções">
       <div class="clisel"><label for="selCli">Cliente</label><select id="selCli"></select></div>
@@ -1735,11 +1740,13 @@ function pedirLoginOnline(){
     const ocupado = (b, t) => { b.disabled = true; b.dataset.txt = b.textContent; b.textContent = t; }, livre = b => { b.disabled = false; b.textContent = b.dataset.txt; };
     const erro = t => { const m = q("#fbMsg"); m.style.color = "var(--red)"; m.textContent = t; };
     function tela(modo, msg = "", ok = false, email = ""){
-      if (modo === "entrar") area.innerHTML = `<form id="fbF"><h1>Entrar</h1><p class="note">Use seu e-mail e sua senha.</p>${campo("fbEmail", "E-mail", "email", "username")}${campo("fbSenha", "Senha", "password", "current-password")}${aviso(msg, ok)}${btnPri("fbOk", "Entrar")}<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">${link("fbEsq", "Esqueci minha senha")}${link("fbCriar", "Criar conta")}</div></form>`;
+      if (modo === "entrar") area.innerHTML = `<form id="fbF"><h1>Entrar</h1><p class="note">Use seu e-mail e sua senha.</p>${campo("fbEmail", "E-mail", "email", "username")}${campo("fbSenha", "Senha", "password", "current-password")}
+        <div class="lg-opcoes"><label><input type="checkbox" id="fbManter"${lerLS("cp_manter") === "1" ? " checked" : ""}> Manter conectado</label><label><input type="checkbox" id="fbLembrar"${lerLS("cp_email") ? " checked" : ""}> Lembrar meu e-mail</label></div>${aviso(msg, ok)}${btnPri("fbOk", "Entrar")}<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">${link("fbEsq", "Esqueci minha senha")}${link("fbCriar", "Criar conta")}</div></form>`;
       if (modo === "criar") area.innerHTML = `<form id="fbF"><h1>Criar conta</h1><p class="note">Use o e-mail que foi liberado para você. Depois, confirme pelo link que vamos enviar.</p>${campo("fbEmail", "E-mail", "email", "username")}${campo("fbSenha", "Senha (mínimo 6 caracteres)", "password", "new-password")}${campo("fbSenha2", "Repetir senha", "password", "new-password")}${aviso(msg, ok)}${btnPri("fbOk", "Criar conta")}${link("fbVoltar", "Voltar para o login")}</form>`;
       if (modo === "esqueci") area.innerHTML = `<form id="fbF"><h1>Recuperar senha</h1><p class="note">Digite seu e-mail. Vamos enviar um link para você criar uma nova senha.</p>${campo("fbEmail", "E-mail", "email", "username")}${aviso(msg, ok)}${btnPri("fbOk", "Enviar link")}${link("fbVoltar", "Voltar para o login")}</form>`;
       if (modo === "verificar") area.innerHTML = `<form id="fbF"><h1>Confirme seu e-mail</h1><p class="note">Enviamos um link de confirmação para <b>${esc(fbAuth.currentUser ? fbAuth.currentUser.email : "")}</b>. Abra o e-mail (veja também a caixa de spam), clique no link e depois volte aqui.</p>${aviso(msg, ok)}${btnPri("fbOk", "Já confirmei")}<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">${link("fbReenv", "Reenviar e-mail")}${link("fbOutra", "Usar outra conta")}</div></form>`;
       area.querySelectorAll("[data-ver]").forEach(b => b.onclick = () => { const i = q("#" + b.dataset.ver), m = i.type === "password"; i.type = m ? "text" : "password"; b.textContent = m ? "Ocultar" : "Mostrar"; b.setAttribute("aria-label", m ? "Ocultar senha" : "Mostrar senha"); });
+      if (!email && modo === "entrar") email = lerLS("cp_email") || "";
       if (q("#fbEmail") && email) q("#fbEmail").value = email;
       const em = () => q("#fbEmail") ? q("#fbEmail").value.trim() : "";
       if (q("#fbEsq")) q("#fbEsq").onclick = () => tela("esqueci", "", false, em());
@@ -1750,7 +1757,10 @@ function pedirLoginOnline(){
       setTimeout(() => { const f = area.querySelector("input"); if (f) (email && q("#fbSenha") ? q("#fbSenha") : f).focus(); }, 50);
       q("#fbF").onsubmit = async ev => { ev.preventDefault(); const b = q("#fbOk"); q("#fbMsg").textContent = "";
         try {
-          if (modo === "entrar") { ocupado(b, "Entrando…"); const r = await fbAuth.signInWithEmailAndPassword(em(), q("#fbSenha").value); return concluir(r.user); }
+          if (modo === "entrar") { ocupado(b, "Entrando…"); const manter = q("#fbManter").checked;
+            await fbAuth.setPersistence(manter ? firebase.auth.Auth.Persistence.LOCAL : firebase.auth.Auth.Persistence.SESSION);
+            gravarLS("cp_manter", manter ? "1" : null); gravarLS("cp_email", q("#fbLembrar").checked ? em() : null);
+            const r = await fbAuth.signInWithEmailAndPassword(em(), q("#fbSenha").value); return concluir(r.user); }
           if (modo === "criar") { if (q("#fbSenha").value !== q("#fbSenha2").value) return erro("As senhas não conferem."); ocupado(b, "Criando…");
             const r = await fbAuth.createUserWithEmailAndPassword(em(), q("#fbSenha").value); await r.user.sendEmailVerification(); return tela("verificar"); }
           if (modo === "esqueci") { ocupado(b, "Enviando…"); await fbAuth.sendPasswordResetEmail(em()); return tela("entrar", "Se este e-mail tiver conta, enviamos um link para criar uma nova senha. Veja também a caixa de spam.", true, em()); }
@@ -1761,7 +1771,7 @@ function pedirLoginOnline(){
       if (!u.emailVerified) { try { await u.sendEmailVerification(); } catch (e) {} return tela("verificar"); }
       try { await u.getIdToken(true);
         if (!(await entrarNoEspaco(u))) { const em = u.email; await fbAuth.signOut(); return tela("entrar", `O e-mail ${em} ainda não foi liberado. Peça a quem já usa o sistema para liberar seu e-mail em Banco de dados → Segurança.`); }
-        fbUser = u; ov.remove(); fim(u);
+        fbUser = u; try { sessionStorage.setItem("cp_fbsessao", "1"); } catch (e) {} ov.remove(); fim(u);
       } catch (e) { await fbAuth.signOut(); tela("entrar", erroFb(e)); }
     }
     if (fbAuth.currentUser) concluir(fbAuth.currentUser); else tela("entrar");
@@ -1775,6 +1785,9 @@ async function carregarOnline(){
     if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
     fbAuth = firebase.auth(); fbAuth.languageCode = "pt-BR"; fbStore = firebase.firestore();
     await new Promise(ok => { const off = fbAuth.onAuthStateChanged(() => { off(); ok(); }); });
+    let mesmaAba = false; try { mesmaAba = sessionStorage.getItem("cp_fbsessao") === "1"; } catch (e) {}
+    if (fbAuth.currentUser && lerLS("cp_manter") !== "1" && !mesmaAba) await fbAuth.signOut();
+    if (!fbAuth.currentUser) limparCacheOnline();
   } catch (e) {
     const ov = document.createElement("div"); ov.id = "trava"; ov.className = "login";
     ov.innerHTML = `<div class="login-box"><div class="login-marca">${MARCA_SVG}<b>Controle de Projetos e Cobrança</b></div><div class="login-form"><h1>Sem conexão</h1><p class="note">Não foi possível conectar ao servidor dos dados. Verifique a internet e tente de novo.</p><button class="btn pri" type="button" style="width:100%;justify-content:center;padding:11px;font-size:16px" onclick="location.reload()">Tentar de novo</button></div></div>`;
@@ -1790,6 +1803,7 @@ async function carregarOnline(){
   storeMode = "db"; const mig = migrar();
   if (!algum || mig) KEYS.forEach(k => persistir(k)); else KEYS.forEach(k => localSave(k, corpo(k)));
   setSync("Salvo online"); render(); ouvirMudancas();
+  const sb = $("#sairBtn"); if (sb) { sb.hidden = false; sb.onclick = sairOnline; }
 }
 function ouvirMudancas(){
   KEYS.forEach(k => fbDoc(k).onSnapshot(sn => {
@@ -1798,6 +1812,10 @@ function ouvirMudancas(){
   }, () => {}));
   fbStore.doc(ESPACO).onSnapshot(sn => { if (sn.exists) { espaco = sn.data(); if (bancoAba === "seguranca") renderQuandoLivre(); } }, () => {});
 }
+const lerLS = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const gravarLS = (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} };
+function limparCacheOnline(){ [...KEYS, "cliente"].forEach(k => gravarLS("cp_" + k, null)); }
+async function sairOnline(){ if (!confirm("Sair do sistema?")) return; try { await fbAuth.signOut(); } catch (x) {} try { sessionStorage.removeItem("cp_fbsessao"); } catch (x) {} gravarLS("cp_manter", null); limparCacheOnline(); location.reload(); }
 function renderQuandoLivre(){ renderPendente = true; tentarRender(); }
 function tentarRender(){
   if (!renderPendente) return; const a = document.activeElement;
@@ -1939,7 +1957,7 @@ V.banco.bind = () => {
   document.querySelectorAll("[data-rmmembro]").forEach(b => b.onclick = async () => { const e = b.dataset.rmmembro; if (!confirm(`Remover o acesso de ${e}?`)) return;
     try { await fbStore.doc(ESPACO).update({membros: firebase.firestore.FieldValue.arrayRemove(e)}); espaco = {...espaco, membros: (espaco.membros || []).filter(x => x !== e)}; render(); toast(`Acesso de ${e} removido.`); } catch (x) { toast("Não foi possível remover o acesso."); } });
   if ($("#fbTroca")) $("#fbTroca").onclick = async () => { try { await fbAuth.sendPasswordResetEmail(fbUser.email); toast(`Enviamos para ${fbUser.email} um link para criar a nova senha.`); } catch (x) { toast(erroFb(x)); } };
-  if ($("#fbSair")) $("#fbSair").onclick = async () => { try { await fbAuth.signOut(); } catch (x) {} [...KEYS, "cliente"].forEach(k => { try { localStorage.removeItem("cp_" + k); } catch (x) {} }); location.reload(); };
+  if ($("#fbSair")) $("#fbSair").onclick = sairOnline;
   if ($("#pinTravar")) $("#pinTravar").onclick = () => { try { sessionStorage.removeItem("cp_chave"); sessionStorage.removeItem("cp_ok"); sessionStorage.removeItem("cp_usuario"); } catch (e) {} location.reload(); };
   if ($("#pinRemover")) $("#pinRemover").onclick = async () => { const p = prompt("Digite a senha atual para remover o login:"); if (p == null) return; const inf = criptoInfo();
     let certa = false; if (inf && inf.v === 2) { for (const x of inf.users) { const ch = await desembrulhar(x, credencial(x.u, p)); if (ch && await testarChave(ch, inf)) { certa = true; break; } } }

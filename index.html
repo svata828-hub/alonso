@@ -769,9 +769,9 @@ async function pdfDe(el, nome, o = {}){
 /* ---------- PDFs com texto (proposta, extrato e recibo) ---------- */
 const NAVY = [23, 50, 92], CINZA = [100, 100, 100], TXT = [34, 34, 34], VERM = [179, 38, 30];
 const limpa = t => String(t ?? "").replace(/\u00a0/g, " ").replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF\u2013\u2014\u2018\u2019\u201C\u201D\u2022\u2026\u20AC]/g, "");
-let ultimoPdf = null;
+let ultimoPdf = null, pdfSoGuardar = false;
 async function salvarPdf(pdf, nome){
-  const blob = pdf.output("blob"); ultimoPdf = {blob, nome};
+  const blob = pdf.output("blob"); ultimoPdf = {blob, nome}; if (pdfSoGuardar) return true;
   const dl = window.claude && claude.use ? await claude.use("downloads") : null;
   if (dl) { try { await dl.save({filename: nome, data: blob}); return true; } catch (e) { if (e && e.code === "declined") return false; throw new Error("Não foi possível salvar o PDF aqui (" + (e && e.message || e) + ")."); } }
   pdf.save(nome); return true;
@@ -1079,6 +1079,32 @@ function editarArq(x, novo){
 }
 V.arquivos.bind = () => { const z = $("#zipA"); if (z) z.onclick = () => zipAnexos(z); $("#novoA").onclick = () => editarArq({}, true); document.querySelectorAll("tr[data-id]").forEach(tr => tr.onclick = () => editarArq(S.arquivos.find(x => x.id === tr.dataset.id)));
   document.querySelectorAll("[data-baixar]").forEach(b => b.onclick = e => { e.stopPropagation(); baixarAnexo(S.arquivos.find(x => x.id === b.dataset.baixar), b); }); };
+/* ----- Aplica as regras novas ao que já estava registrado ----- */
+let pdfsAntigosFeito = false;
+async function atualizarRegistrados(){
+  if (!DB.config.statusSinc) {
+    let mud = false;
+    DB.orcamentos.forEach(o => { const pj = DB.projetos.find(q => q.orc === o.id); if (!pj) return;
+      const alvo = o.status === "Recusado" ? "Cancelado" : o.status === "Aprovado" && pj.status !== "Concluído" ? "Em produção" : null;
+      if (alvo && pj.status !== alvo) { const a = {...pj}; pj.status = alvo; registrar(pj, a, pj, CAMPOS_HIST_P); mud = true; } });
+    const orfaos = DB.projetos.filter(p => !orcDoRec(p));
+    orfaos.forEach(p => paraLixeira("projetos", p, "o projeto " + p.projeto + " (orçamento já apagado)"));
+    if (orfaos.length) { DB.projetos = DB.projetos.filter(p => !orfaos.includes(p)); mud = true; }
+    DB.config.statusSinc = 1; if (mud) persistir("projetos"); persistir.soConfig = true; persistir("config"); persistir.soConfig = false;
+    if (mud) renderQuandoLivreSeguro();
+  }
+  if (pdfsAntigosFeito || !window.jspdf) return; pdfsAntigosFeito = true;
+  const faltam = DB.orcamentos.filter(o => !o.pdf && clienteObj(o.cliente)); let n = 0;
+  for (const o of faltam) {
+    try { const rot = numOrc(o) + (o.rev ? " R" + o.rev : ""); pdfSoGuardar = true;
+      const f = {projeto: o.projeto, data: o.data || "", entrega: o.entrega || "", valor: o.valor ?? "", horas: o.horas ?? "", revInc: o.revInc ?? "", prazo: o.prazo ?? "", escopo: o.escopo || "", entregaveis: o.entregaveis || "", obs: o.obs || "", rev: o.rev || 0};
+      await pdfProposta(f, o.num, `${prefixoCli(o.cliente)}Proposta ${rot} - ${nomeArq(o.projeto)}.pdf`, clienteObj(o.cliente));
+      pdfSoGuardar = false; if (!o.pdf && DB.orcamentos.includes(o) && await guardarPdfSeguro(o)) n++; }
+    catch (e) {} finally { pdfSoGuardar = false; }
+  }
+  if (n) { persistir("orcamentos"); renderQuandoLivreSeguro(); toast(`${n} proposta(s) já registrada(s) agora com o PDF em Propostas PDF.`); }
+}
+function renderQuandoLivreSeguro(){ const a = document.activeElement; if ($("#dlg").open || (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.closest("#main"))) return setTimeout(renderQuandoLivreSeguro, 1500); render(); }
 /* ----- Propostas PDF: guarda o último PDF gerado de cada proposta ----- */
 const idbPdf = () => new Promise((ok, falha) => { const r = indexedDB.open("cp_pdfs", 1); r.onupgradeneeded = () => r.result.createObjectStore("pdfs"); r.onsuccess = () => ok(r.result); r.onerror = () => falha(r.error); });
 async function idbOp(modo, fn){ const d = await idbPdf(); return new Promise((ok, falha) => { const t = d.transaction("pdfs", modo), q = fn(t.objectStore("pdfs")); t.oncomplete = () => ok(q && q.result); t.onerror = () => falha(t.error); }); }
@@ -2093,7 +2119,7 @@ aplicarTema(false);
 $("#verBtn").textContent = "Versão " + VERSAO + " · o que mudou";
 $("#verBtn").onclick = () => dlg("O que mudou", `<p class="note" style="margin:0 0 10px">Você está usando a versão <b>${VERSAO}</b>${FORA ? " (no seu site)" : " (no Claude)"}.</p><ul class="notif">${MUDANCAS.map(([v, t]) => `<li><span class="pill p-prod tag">${v}</span><span>${esc(t)}</span></li>`).join("")}</ul>`, "");
 $("#selCli").onchange = e => { const v = e.target.value; if (v === "__novo") { e.target.value = SEL; novoCliente(); } else escolherCliente(v); };
-carregar().then(() => setTimeout(avisar, 400));
+carregar().then(() => { setTimeout(avisar, 400); setTimeout(atualizarRegistrados, 1500); });
 setInterval(async () => { atualizarSino(); if (FORA) await autoDrive(); if (driveDevido() && !document.hidden && !(FORA && gValido())) toast("Backup no Drive pendente: veja Notificações."); }, (FORA ? 10 : 30) * 60000);
 if (FORA) setTimeout(autoDrive, 3000);
 setTimeout(async () => { await limparLixeira(); await autoPasta(); await verificarBackupNovo(); }, 2500);

@@ -296,6 +296,10 @@ const TIPOS = ["Nenhum","STEP","IGES","DXF","DWG","PDF","SLDPRT","SLDASM","SLDDR
 const CHECK = ["Modelo 3D","Montagem","Detalhamento 2D","Lista de materiais","STEP enviado","DXF enviado","PDF enviado","Aprovação do cliente"];
 const entregarDe = x => CHECK.map((_, i) => !x || !Array.isArray(x.entregar) ? true : !!x.entregar[i]); /* itens de entrega marcados na proposta (controle interno) */
 const ENT_PADRAO = "Modelo 3D (SLDPRT/STEP), detalhamento 2D para fabricação (PDF/DXF) e lista de materiais.";
+const ESC_PADRAO = "Desenvolvimento e elaboração de projetos técnicos de engenharia, em conformidade com os requisitos, especificações técnicas e necessidades estabelecidas pelo cliente, observando as normas técnicas e regulamentações aplicáveis.";
+/* revisão extra: "valor" (cobrada por revisão) ou "combinar" (a combinar); a proposta pode trocar o padrão do cliente */
+const revRegra = (f, c) => { const modo = (f && f.revModo) || (c && c.revModo) || "valor"; return {modo, val: modo === "combinar" ? 0 : (num(f && f.revVal) ?? num(c && c.revVal) ?? 0)}; };
+const revTexto = (f, c) => { const r = revRegra(f, c); return r.modo === "combinar" ? "Revisões adicionais: a combinar." : `Revisões adicionais: ${brl(r.val)} cada.`; };
 const CLIENTE_PADRAO = {nome:"",cnpj:"",contato:"",tel:"",email:"",endereco:"",uf:"",cidade:"",condicao:"",prazo:30,revInc:2,revVal:150,obs:"",multa:2,juros:1,meta:5000,validade:15,eu:"",vhora:120,margem:20,minhaCidade:""};
 const KEYS = ["clientes","orcamentos","projetos","pagamentos","revisoes","arquivos","config","lixeira","historico"];
 const COLS = ["orcamentos","projetos","pagamentos","revisoes","arquivos"];
@@ -372,7 +376,7 @@ function escolherCliente(id){ SEL = id; try { localStorage.setItem("cp_sel", id)
 function novoCliente(){
   const nome = (prompt("Nome do novo cliente:") || "").trim(); if (!nome) return;
   const b = DB.clientes.find(c => c.id === SEL) || DB.clientes[0] || CLIENTE_PADRAO;
-  const c = {...CLIENTE_PADRAO, prazo: b.prazo, revInc: b.revInc, revVal: b.revVal, multa: b.multa, juros: b.juros, meta: b.meta, validade: b.validade, eu: b.eu, vhora: b.vhora, margem: b.margem, minhaCidade: b.minhaCidade, id: uid(), codigo: proxCodigo(), nome};
+  const c = {...CLIENTE_PADRAO, prazo: b.prazo, revInc: b.revInc, revModo: b.revModo, revVal: b.revVal, multa: b.multa, juros: b.juros, meta: b.meta, validade: b.validade, eu: b.eu, vhora: b.vhora, margem: b.margem, minhaCidade: b.minhaCidade, id: uid(), codigo: proxCodigo(), nome};
   DB.clientes.push(c); save("clientes"); escolherCliente(c.id); ir("cliente"); toast(`Cliente ${nome} adicionado.`);
 }
 function migrar(){
@@ -535,7 +539,7 @@ function calc(p){
   const encargos = atraso ? Math.round(saldo * ((num(c.multa)||0)/100 + (num(c.juros)||0)/100/30*atraso) * 100) / 100 : 0;
   const horas = num(p.horas) || 0, custos = num(p.custos) || 0;
   const revFeitas = DB.revisoes.filter(r => mesmo(r, p)).length;
-  const revExtras = Math.max(0, revFeitas - revInc), valorExtras = revExtras * (num(c.revVal)||0);
+  const revExtras = Math.max(0, revFeitas - revInc), valorExtras = revExtras * revRegra(o, c).val;
   const lucro = valor + valorExtras - custos, base = valor + valorExtras;
   const marg = (num(c.margem)||0)/100;
   const precoSug = horasEst ? Math.round((horasEst*(num(c.vhora)||0) + custos)/(1-marg)/10)*10 : null;
@@ -696,7 +700,7 @@ V.dashboard.bind = () => {
 };
 
 /* ----- proposta ----- */
-function novoForm(){ return {revOf:null,rev:0,projeto:"",data:iso(hoje()),entrega:"",valor:"",horas:"",revInc:"",prazo:"",escopo:"",entregaveis:ENT_PADRAO,obs:""}; }
+function novoForm(){ return {revOf:null,rev:0,projeto:"",data:iso(hoje()),entrega:"",valor:"",horas:"",revInc:"",prazo:"",escopo:ESC_PADRAO,entregaveis:ENT_PADRAO,obs:"",revModo:"",revVal:""}; }
 const proxNum = () => Math.max(0, ...DB.orcamentos.filter(o => o.cliente === SEL).map(o => num(o.num) || 0)) + 1;
 const numProp = n => `${codCli(SEL)}-${p3(n)}`;
 function papelProposta(f, n){
@@ -715,7 +719,7 @@ function papelProposta(f, n){
     <div class="sec">5. Prazo de entrega</div><p>${f.entrega ? dbr(f.entrega) + (dias != null ? ` (${dias} dias corridos a partir da aprovação)` : "") : "A combinar"}</p>
     <div class="sec">6. Condições de pagamento</div><p>${esc(c.condicao || "A combinar")}.</p>
     <p>Pagamento em até ${num(f.prazo) ?? num(c.prazo) ?? 30} dias após a entrega. Em caso de atraso: multa de ${(num(c.multa)||0).toLocaleString("pt-BR")}% e juros de ${(num(c.juros)||0).toLocaleString("pt-BR")}% ao mês sobre o saldo.</p>
-    <div class="sec">7. Revisões</div><p>Estão incluídas ${num(f.revInc) ?? num(c.revInc) ?? 0} revisões. Revisões adicionais: ${brl(num(c.revVal)||0)} cada.</p>
+    <div class="sec">7. Revisões</div><p>Estão incluídas ${num(f.revInc) ?? num(c.revInc) ?? 0} revisões. ${revTexto(f, c)}</p>
     <div class="sec">8. Observações</div><p>${esc(f.obs || "—")}</p>
     <div class="sec">Aceite da proposta</div><p class="sm">Declaro estar de acordo com o escopo, o prazo e as condições desta proposta.</p>
     <div class="sign"><div><b>${esc(c.eu||"")}</b><br>Data: ____/____/______</div><div><b>${esc(c.nome||"")}</b><br>Data: ____/____/______</div></div>
@@ -731,8 +735,10 @@ V.proposta = () => {
     <div class="panel"><div class="form" id="pform">
       <div class="wide">${inp("projeto","Nome do projeto")}</div>
       ${inp("data","Data da proposta","date")}${inp("entrega","Data de entrega","date")}
-      ${inp("valor","Valor (R$)","number",'min="0" step="0.01"')}${inp("horas","Horas estimadas","number",'min="0" step="0.5"')}
+      ${inp("valor","Valor (R$)","number",'min="0" step="0.01"')}<div class="fld"><label for="pf_horas_h">Horas estimadas</label><div class="hms">${[["h","h",hmsPartes(f.horas).h,""],["m","min",hmsPartes(f.horas).m,'max="59"'],["s","s",hmsPartes(f.horas).s,'max="59"']].map(([k,u,v,mx]) => `<span class="hms-c"><input id="pf_horas_${k}" data-hms="${k}" type="number" min="0" ${mx} step="1" inputmode="numeric" value="${v ?? ""}" placeholder="0" aria-label="Horas estimadas: ${u}"><small>${u}</small></span>`).join("")}</div></div>
       ${inp("revInc","Revisões incluídas","number",`min="0" placeholder="padrão: ${num(c.revInc)??0}"`)}${inp("prazo","Prazo de pagamento (dias)","number",`min="0" placeholder="padrão: ${num(c.prazo)??30}"`)}
+      <div class="fld"><label for="pf_revModo">Revisão extra</label><select id="pf_revModo" data-k="revModo"><option value="valor"${revRegra(f, c).modo === "valor" ? " selected" : ""}>Por valor</option><option value="combinar"${revRegra(f, c).modo === "combinar" ? " selected" : ""}>A combinar</option></select></div>
+      ${inp("revVal","Valor da revisão extra (R$)","number",`min="0" step="0.01" placeholder="padrão: ${num(c.revVal)??0}"`)}
       <div class="fld wide"><label for="pf_escopo">Escopo do serviço</label><textarea id="pf_escopo" data-k="escopo" rows="4">${esc(f.escopo)}</textarea></div>
       <div class="fld wide"><label for="pf_entregaveis">Entregáveis</label><textarea id="pf_entregaveis" data-k="entregaveis" rows="2">${esc(f.entregaveis)}</textarea></div>
       <div class="fld wide"><label for="pf_obs">Observações</label><textarea id="pf_obs" data-k="obs" rows="2">${esc(f.obs)}</textarea></div>
@@ -747,8 +753,11 @@ V.proposta = () => {
 };
 V.proposta.bind = () => {
   if (SEL === "todos") return ligarEscolha();
-  $("#pform").addEventListener("change", e => { const ck = e.target.dataset.ck; if (ck == null) return; FORM.entregar = entregarDe(FORM); FORM.entregar[+ck] = e.target.checked; });
-  $("#pform").addEventListener("input", e => { const k = e.target.dataset.k; if (!k) return; FORM[k] = e.target.value;
+  $("#pform").addEventListener("change", e => { if (e.target.dataset.k === "revModo") { FORM.revModo = e.target.value; $("#pw").innerHTML = papelProposta(FORM, proxNum()); return; } const ck = e.target.dataset.ck; if (ck == null) return; FORM.entregar = entregarDe(FORM); FORM.entregar[+ck] = e.target.checked; });
+  $("#pform").addEventListener("input", e => { if (e.target.dataset.hms) { const g = x => $("#pf_horas_" + x).value, hv = hmsLer({horas__h: g("h"), horas__m: g("m"), horas__s: g("s")}, "horas"); FORM.horas = hv == null ? "" : hv;
+      const c = C(), sug = num(FORM.horas) ? Math.round(num(FORM.horas)*(num(c.vhora)||0)/(1-(num(c.margem)||0)/100)/10)*10 : null;
+      $("#sug").innerHTML = sug ? `Preço sugerido: <b>${brl(sug)}</b> (horas × valor-hora, com a margem desejada). Não sai no PDF.` : "Informe as horas estimadas para ver o preço sugerido."; return; }
+    const k = e.target.dataset.k; if (!k) return; FORM[k] = e.target.value;
     $("#pw").innerHTML = papelProposta(FORM, proxNum());
     if (k === "horas") { const c = C(), sug = num(FORM.horas) ? Math.round(num(FORM.horas)*(num(c.vhora)||0)/(1-(num(c.margem)||0)/100)/10)*10 : null;
       $("#sug").innerHTML = sug ? `Preço sugerido: <b>${brl(sug)}</b> (horas × valor-hora, com a margem desejada). Não sai no PDF.` : "Informe as horas estimadas para ver o preço sugerido."; } });
@@ -816,7 +825,7 @@ async function pdfProposta(f, n, nome, cli){
   o.barra("5. PRAZO DE ENTREGA"); o.txt(f.entrega ? dbr(f.entrega) + (dias != null ? ` (${dias} dias corridos a partir da aprovação)` : "") : "A combinar");
   o.barra("6. CONDIÇÕES DE PAGAMENTO"); o.txt((c.condicao || "A combinar") + ".");
   o.txt(`Pagamento em até ${num(f.prazo) ?? num(c.prazo) ?? 30} dias após a entrega. Em caso de atraso: multa de ${(num(c.multa) || 0).toLocaleString("pt-BR")}% e juros de ${(num(c.juros) || 0).toLocaleString("pt-BR")}% ao mês sobre o saldo.`);
-  o.barra("7. REVISÕES"); o.txt(`Estão incluídas ${num(f.revInc) ?? num(c.revInc) ?? 0} revisões. Revisões adicionais: ${brl(num(c.revVal) || 0)} cada.`);
+  o.barra("7. REVISÕES"); o.txt(`Estão incluídas ${num(f.revInc) ?? num(c.revInc) ?? 0} revisões. ${revTexto(f, c)}`);
   o.barra("8. OBSERVAÇÕES"); o.txt(f.obs || "—");
   o.barra("ACEITE DA PROPOSTA"); o.txt("Declaro estar de acordo com o escopo, o prazo e as condições desta proposta.", 9, false, CINZA);
   assinaturas(o, [c.eu || "", c.nome || ""]);
@@ -866,7 +875,7 @@ async function gerarProposta(){
     const ok = await pdfProposta(f, n, `${prefixoCli(SEL)}Proposta ${rotulo} - ${nomeArq(nome)}.pdf`);
     if (!ok) { toast("PDF não salvo. A proposta continua aqui."); return; }
     let alvo = ob;
-    const dados = {data:f.data, projeto:nome, escopo:f.escopo, entregaveis:f.entregaveis, valor:num(f.valor), entrega:f.entrega, horas:num(f.horas), revInc:num(f.revInc), prazo:num(f.prazo), obs:f.obs, entregar:entregarDe(f)};
+    const dados = {data:f.data, projeto:nome, escopo:f.escopo, entregaveis:f.entregaveis, valor:num(f.valor), entrega:f.entrega, horas:num(f.horas), revInc:num(f.revInc), prazo:num(f.prazo), obs:f.obs, entregar:entregarDe(f), revModo:f.revModo || "", revVal:num(f.revVal)};
     if (ob) { const antesR = {...ob, sit: ob.status}; Object.assign(ob, dados, {rev: f.rev, status: "Enviado"}); registrar({orc: ob.id, projeto: nome}, antesR, {...ob, sit: ob.status}, {...CAMPOS_HIST_O, rev: "Revisão da proposta"}); save("orcamentos");
       if (!DB.projetos.some(q => q.orc === ob.id)) { S.projetos.push({id:uid(), orc:ob.id, cliente:SEL, projeto:nome, status:"Pendente", check:Array(8).fill(false)}); save("projetos"); } }
     else { const oid = uid(); S.orcamentos.push({id:oid, cliente:SEL, num:n, rev:0, status:"Enviado", ...dados});
@@ -948,7 +957,7 @@ V.orcamentos.bind = () => document.querySelectorAll("tr[data-id]").forEach(tr =>
     if (pjs.length) { S.projetos = S.projetos.filter(q => q.orc !== o.id); save("projetos"); }
     render(); toast("Apagado. Pode ser recuperado na Lixeira por 30 dias."); };
   $("#dPdf").onclick = async () => { const b = $("#dPdf"), rot = numOrc(o) + (o.rev ? " R" + o.rev : ""); b.disabled = true; b.textContent = "Gerando…";
-    try { const f = {projeto: o.projeto, data: o.data || "", entrega: o.entrega || "", valor: o.valor ?? "", horas: o.horas ?? "", revInc: o.revInc ?? "", prazo: o.prazo ?? "", escopo: o.escopo || "", entregaveis: o.entregaveis || "", obs: o.obs || "", rev: o.rev || 0};
+    try { const f = {projeto: o.projeto, data: o.data || "", entrega: o.entrega || "", valor: o.valor ?? "", horas: o.horas ?? "", revInc: o.revInc ?? "", prazo: o.prazo ?? "", escopo: o.escopo || "", entregaveis: o.entregaveis || "", obs: o.obs || "", rev: o.rev || 0, revModo: o.revModo || "", revVal: o.revVal ?? ""};
       const ok = await pdfProposta(f, o.num, `${prefixoCli(o.cliente)}Proposta ${rot} - ${nomeArq(o.projeto)}.pdf`, clienteObj(o.cliente));
       if (!ok) return toast("PDF não salvo.");
       const guardou = await guardarPdfSeguro(o); if (guardou) save("orcamentos");
@@ -959,7 +968,7 @@ V.orcamentos.bind = () => document.querySelectorAll("tr[data-id]").forEach(tr =>
     abrirEmail(c.email, `Proposta Nº ${rot} – ${o.projeto}`, `Olá ${c.contato || ""}, tudo bem?\n\nSegue em anexo a proposta Nº ${rot} referente ao projeto ${o.projeto}, no valor de ${brl(o.valor)}${o.entrega ? `, com entrega prevista para ${dbr(o.entrega)}` : ""}.\n\nFico à disposição para qualquer dúvida.\n\n${c.eu || ""}`);
     toast("Anexe o PDF da proposta no e-mail antes de enviar."); };
   $("#dRev").onclick = () => { $("#dlg").close(); if (SEL !== o.cliente) { SEL = o.cliente; try { localStorage.setItem("cp_sel", SEL); } catch (e) {} }
-    FORM = {revOf: o.id, rev: (o.rev || 0) + 1, projeto: o.projeto, data: iso(hoje()), entrega: o.entrega || "", valor: o.valor ?? "", horas: o.horas ?? "", revInc: o.revInc ?? "", prazo: o.prazo ?? "", escopo: o.escopo || "", entregaveis: o.entregaveis || ENT_PADRAO, obs: o.obs || "", entregar: entregarDe(o)}; ir("proposta"); };
+    FORM = {revOf: o.id, rev: (o.rev || 0) + 1, projeto: o.projeto, data: iso(hoje()), entrega: o.entrega || "", valor: o.valor ?? "", horas: o.horas ?? "", revInc: o.revInc ?? "", prazo: o.prazo ?? "", escopo: o.escopo || "", entregaveis: o.entregaveis || ENT_PADRAO, obs: o.obs || "", entregar: entregarDe(o), revModo: o.revModo || "", revVal: o.revVal ?? ""}; ir("proposta"); };
   $("#dOk").onclick = () => { const v = lerForm(), antigo = o.projeto, novo = v.projeto.trim(), stAntes = o.status;
     if (!novo) return toast("O projeto precisa de um nome.");
     if (novo !== antigo && DB.orcamentos.some(x => x.cliente === o.cliente && x.projeto === novo)) return toast("Este cliente já tem um orçamento com esse nome.");
@@ -1097,7 +1106,7 @@ async function atualizarRegistrados(){
   const faltam = DB.orcamentos.filter(o => !o.pdf && clienteObj(o.cliente)); let n = 0;
   for (const o of faltam) {
     try { const rot = numOrc(o) + (o.rev ? " R" + o.rev : ""); pdfSoGuardar = true;
-      const f = {projeto: o.projeto, data: o.data || "", entrega: o.entrega || "", valor: o.valor ?? "", horas: o.horas ?? "", revInc: o.revInc ?? "", prazo: o.prazo ?? "", escopo: o.escopo || "", entregaveis: o.entregaveis || "", obs: o.obs || "", rev: o.rev || 0};
+      const f = {projeto: o.projeto, data: o.data || "", entrega: o.entrega || "", valor: o.valor ?? "", horas: o.horas ?? "", revInc: o.revInc ?? "", prazo: o.prazo ?? "", escopo: o.escopo || "", entregaveis: o.entregaveis || "", obs: o.obs || "", rev: o.rev || 0, revModo: o.revModo || "", revVal: o.revVal ?? ""};
       await pdfProposta(f, o.num, `${prefixoCli(o.cliente)}Proposta ${rot} - ${nomeArq(o.projeto)}.pdf`, clienteObj(o.cliente));
       pdfSoGuardar = false; if (!o.pdf && DB.orcamentos.includes(o) && await guardarPdfSeguro(o)) n++; }
     catch (e) {} finally { pdfSoGuardar = false; }
@@ -1296,7 +1305,7 @@ V.cliente = () => {
   </div></div>
   <div class="panel" style="margin-bottom:14px"><h2>Seu logotipo</h2><p class="note" style="margin:0 0 10px">Aparece na proposta, no extrato e no recibo (vale para todos os clientes).</p><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">${DB.config.logo ? `<img src="${DB.config.logo}" alt="Logotipo atual" style="max-height:56px;max-width:220px;background:#fff;padding:4px;border-radius:4px">` : `<span class="muted">Nenhum logotipo.</span>`}<label class="btn" for="logoIn">${DB.config.logo ? "Trocar logotipo" : "Enviar logotipo"}</label><input id="logoIn" type="file" accept="image/png,image/jpeg" hidden>${DB.config.logo ? `<button class="btn danger" type="button" id="logoDel">Remover</button>` : ""}</div></div>
   <div class="panel" style="margin-bottom:14px"><h2>Regras de cobrança e preço</h2><div class="form" id="rform">
-    ${i("prazo","Prazo de pagamento (dias após a entrega)","number",'min="0"')}${i("revInc","Revisões incluídas por projeto","number",'min="0"')}${i("revVal","Valor de cada revisão extra (R$)","number",'step="0.01" min="0"')}
+    ${i("prazo","Prazo de pagamento (dias após a entrega)","number",'min="0"')}${i("revInc","Revisões incluídas por projeto","number",'min="0"')}<div class="fld"><label for="c_revModo">Revisão extra</label><select id="c_revModo" data-k="revModo"><option value="valor"${(c.revModo || "valor") === "valor" ? " selected" : ""}>Por valor</option><option value="combinar"${c.revModo === "combinar" ? " selected" : ""}>A combinar</option></select></div>${i("revVal","Valor de cada revisão extra (R$)","number",'step="0.01" min="0"')}
     ${i("multa","Multa por atraso (%)","number",'step="0.1" min="0"')}${i("juros","Juros por atraso (% ao mês)","number",'step="0.1" min="0"')}${i("meta","Meta mensal de faturamento (R$)","number",'min="0"')}
     ${i("validade","Validade da proposta (dias)","number",'min="0"')}${i("vhora","Seu valor-hora (R$)","number",'step="0.01" min="0"')}${i("margem","Margem desejada (%)","number",'step="1" min="0" max="90"')}
     ${i("eu","Seu nome / empresa (na proposta, extrato e recibo)")}${i("minhaCidade","Sua cidade (no recibo)","text",'placeholder="Curitiba/PR"')}

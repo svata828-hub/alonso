@@ -80,7 +80,7 @@ input:focus,select:focus,textarea:focus,button:focus-visible,a:focus-visible{out
 .btn.danger{color:var(--red)}
 .btn.big{background:#B3261E;border-color:#B3261E;color:#fff;font-size:17px;padding:12px 22px}
 .hms{display:flex;gap:6px}
-.ex-row{display:grid;grid-template-columns:2fr 1fr 1.6fr auto;gap:10px;align-items:end;margin:6px 0 10px;padding-bottom:10px;border-bottom:1px dashed var(--line)}
+.ex-row{display:grid;grid-template-columns:2fr 1fr 1.1fr 1.6fr auto;gap:10px;align-items:end;margin:6px 0 10px;padding-bottom:10px;border-bottom:1px dashed var(--line)}
 @media (max-width:760px){.ex-row{grid-template-columns:1fr}}
 .anx-lista{list-style:none;margin:6px 0 8px;padding:0;display:flex;flex-direction:column;gap:6px}
 .anx-lista li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
@@ -88,6 +88,17 @@ input:focus,select:focus,textarea:focus,button:focus-visible,a:focus-visible{out
 .hms-c input{width:100%;min-width:0;padding-left:8px;padding-right:6px;-moz-appearance:textfield;appearance:textfield}
 .hms-c input::-webkit-inner-spin-button,.hms-c input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 .hms-c small{color:var(--mut);font-size:13px}
+.sit-cel{display:flex;align-items:center;gap:8px}
+.sit-pill{display:none}
+.sit-bts{display:inline-flex;gap:4px;flex-wrap:nowrap}
+.sit-bts .btn.sm{min-height:26px;padding:2px 8px;font-size:12px}
+.sit-bts .ativo.s-ok{background:var(--green);border-color:var(--green);color:#fff}
+.sit-bts .ativo.s-no{background:var(--red);border-color:var(--red);color:#fff}
+.sit-bts .ativo.s-pe{background:var(--orange);border-color:var(--orange);color:#fff}
+.ck-x{border:0;background:none;color:var(--red);cursor:pointer;font-size:12px;padding:0 2px}
+.notif-acoes{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.ck-novo{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.ck-novo input{flex:1;min-width:180px}
 .btn.sm{min-height:30px;padding:4px 10px;font-weight:500;font-size:13.5px}
 .btn:disabled{opacity:.5;cursor:default}
 /* indicadores */
@@ -298,7 +309,9 @@ const STATUS = ["Pendente","Em produção","Concluído","Cancelado"];
 const FORMAS = ["PIX","Boleto","Transferência","Cartão","Dinheiro"];
 const TIPOS = ["Nenhum","STEP","IGES","DXF","DWG","PDF","SLDPRT","SLDASM","SLDDRW","STL","Outro"];
 const CHECK = ["Modelo 3D","Montagem","Detalhamento 2D","Lista de materiais","STEP enviado","DXF enviado","PDF enviado","Aprovação do cliente"];
-const entregarDe = x => CHECK.map((_, i) => !x || !Array.isArray(x.entregar) ? true : !!x.entregar[i]); /* itens de entrega marcados na proposta (controle interno) */
+/* checklist: 8 itens padrão + itens próprios (DB.config.checkExtra; um item removido fica oculto para não mexer nos projetos antigos) */
+const checkTodos = () => [...CHECK.map(nome => ({nome})), ...(((typeof DB !== "undefined" && DB.config && DB.config.checkExtra) || []))];
+const entregarDe = x => checkTodos().map((_, i) => !x || !Array.isArray(x.entregar) ? i < CHECK.length : !!x.entregar[i]); /* itens de entrega marcados na proposta (controle interno) */
 const ENT_PADRAO = "Modelo 3D (SLDPRT/STEP), detalhamento 2D para fabricação (PDF/DXF) e lista de materiais.";
 const ESC_PADRAO = "Desenvolvimento e elaboração de projetos técnicos de engenharia, em conformidade com os requisitos, especificações técnicas e necessidades estabelecidas pelo cliente, observando as normas técnicas e regulamentações aplicáveis.";
 /* revisão extra: "valor" (cobrada por revisão) ou "combinar" (a combinar); a proposta pode trocar o padrão do cliente */
@@ -411,10 +424,13 @@ const numOrc = o => o && o.num ? `${codCli(o.cliente)}-${p3(o.num)}${o.item ? ".
 const numBase = o => o && o.num ? `${codCli(o.cliente)}-${p3(o.num)}` : "";
 /* proposta com vários projetos: cada projeto é um orçamento com o mesmo número, ligado pelo "grupo" */
 const grupoDe = o => o && o.grupo ? DB.orcamentos.filter(x => x.grupo === o.grupo).sort((a, b) => (a.item || 0) - (b.item || 0)) : (o ? [o] : []);
-const itensDe = f => [{projeto: f.projeto, valor: f.valor, horas: f.horas}, ...(f.extras || [])];
+const itensDe = f => [{projeto: f.projeto, valor: f.valor, horas: f.horas, entrega: f.entrega}, ...(f.extras || [])];
+function prazoTexto(f){ const its = itensDe(f), dt = it => it.entrega || f.entrega || "", dd = s => s && f.data ? diff(pd(s), pd(f.data)) : null, um = s => s ? dbr(s) + (dd(s) != null ? ` (${dd(s)} dias corridos a partir da aprovação)` : "") : "A combinar";
+  if (its.length < 2 || its.every(it => dt(it) === dt(its[0]))) return [um(dt(its[0]))];
+  return its.map(it => `${limpa(it.projeto || "Projeto")}: ${um(dt(it))}`); }
 function fDeOrc(o){ const g = grupoDe(o), p = g[0] || o;
   return {projeto: p.projeto, data: p.data || "", entrega: p.entrega || "", valor: p.valor ?? "", horas: p.horas ?? "", revInc: p.revInc ?? "", prazo: p.prazo ?? "", escopo: p.escopo || "", entregaveis: p.entregaveis || "", obs: p.obs || "", rev: p.rev || 0, revModo: p.revModo || "", revVal: p.revVal ?? "",
-    extras: g.slice(1).map(x => ({projeto: x.projeto, valor: x.valor ?? "", horas: x.horas ?? ""})), numRot: numBase(p)}; }
+    extras: g.slice(1).map(x => ({projeto: x.projeto, valor: x.valor ?? "", horas: x.horas ?? "", entrega: x.entrega || ""})), numRot: numBase(p)}; }
 function prefixoCli(id){ const c = clienteObj(id); return c && c.codigo ? `${p3(c.codigo)} ${nomeArq(c.nome || "Cliente")} - ` : ""; }
 function save(k){
   if (k === "cliente") k = "clientes";
@@ -554,7 +570,7 @@ function calc(p){
   const lucro = valor + valorExtras - custos, base = valor + valorExtras;
   const marg = (num(c.margem)||0)/100;
   const precoSug = horasEst ? Math.round((horasEst*(num(c.vhora)||0) + custos)/(1-marg)/10)*10 : null;
-  const entr = entregarDe(o), nEntr = entr.filter(Boolean).length, checks = (p.check||[]).filter((v, i) => v && entr[i]).length;
+  const ckT = checkTodos(), entr = entregarDe(o).map((v, i) => v && !ckT[i].oculto), nEntr = entr.filter(Boolean).length, checks = (p.check||[]).filter((v, i) => v && entr[i]).length;
   const arqs = DB.arquivos.filter(a => mesmo(a, p) && a.data).map(a => a.data).sort();
   const r = {p, o, num:numOrc(o), valor, prazo, revInc, horasEst, pedido, entrega, recebido, saldo, pag, dias, venc, atraso, encargos, totalDevido: saldo + encargos,
     horas, rph: horas > 0 ? valor / horas : null, custos, revFeitas, revExtras, valorExtras, lucro, margem: base ? lucro / base : null,
@@ -644,6 +660,8 @@ V.dashboard = () => {
       <div class="fld"><label for="fPer">Período da entrega</label><select id="fPer">${["Todos","Mês atual","Últimos 3 meses","Ano atual"].map(o=>`<option${o===filtro.periodo?" selected":""}>${o}</option>`).join("")}</select></div>
       <div class="fld"><label for="fSt">Status</label><select id="fSt">${["Todos",...STATUS].map(o=>`<option${o===filtro.status?" selected":""}>${o}</option>`).join("")}</select></div>
       <button class="btn" id="pdfD" type="button" data-nopdf>Salvar em PDF</button>
+      <div class="fld"><label for="relMes">Relatório do mês</label><input id="relMes" type="month" value="${iso(t).slice(0, 7)}" data-nopdf></div>
+      <button class="btn" id="relPdf" type="button" data-nopdf>Relatório mensal (PDF)</button>
     </div></div>
   ${S.projetos.length ? "" : `<div class="panel" style="margin-bottom:14px"><div class="empty"><b>Nenhum projeto ainda.</b> Comece pela <a href="#cliente">aba Cliente</a> e depois crie uma <a href="#proposta">proposta</a>: o projeto aparece aqui sozinho.</div></div>`}
   <h3 class="kgroup">Financeiro</h3>
@@ -693,8 +711,27 @@ V.dashboard = () => {
   <div class="grid g2">
     <div class="panel alert"><h2>Cobranças pendentes</h2>${cob.length?`<div class="tw"><table><thead><tr><th>Projeto</th><th class="n">Saldo</th><th class="n">Multa + juros</th><th class="n">Total</th><th>Vencimento</th><th class="n">Atraso</th><th>Status</th></tr></thead><tbody>${cob.slice(0,12).map(r=>`<tr class="${r.atraso||r.p.status==="Concluído"?"hot":""}"><td>${esc(r.p.projeto)}</td><td class="n">${brl0(r.saldo)}</td><td class="n">${r.encargos?brl0(r.encargos):"—"}</td><td class="n amt">${brl0(r.totalDevido)}</td><td>${dbr(r.venc)}</td><td class="n">${r.atraso?r.atraso+" d":""}</td><td>${pill(r.p.status)}</td></tr>`).join("")}</tbody></table></div>`:`<p class="empty">Nenhuma cobrança pendente.</p>`}</div>
     <div class="panel warn"><h2>Projetos em aberto</h2>${prazos.length?`<div class="tw"><table><thead><tr><th>Projeto</th><th>Entrega</th><th>Situação</th><th class="n">Dias</th></tr></thead><tbody>${prazos.slice(0,12).map(r=>`<tr><td>${esc(r.p.projeto)}</td><td>${dbr(r.entrega)}</td><td>${r.dias<0?`<span class="pill p-red">Atrasado</span>`:r.dias<=7?`<span class="pill p-pend">Vence logo</span>`:pill(r.p.status)}</td><td class="n">${r.dias}</td></tr>`).join("")}</tbody></table></div>`:`<p class="empty">Nenhum projeto em aberto.</p>`}</div>
-  </div>`;
+  </div>${painelAprovacao()}`;
 };
+/* aprovação de propostas: cada proposta conta uma vez (vários projetos da mesma proposta formam um grupo) */
+function propostasDe(lista){ const m = new Map();
+  lista.forEach(o => { const k = o.grupo || o.id; if (!m.has(k)) m.set(k, {data: o.data, cliente: o.cliente, itens: []}); m.get(k).itens.push(o); });
+  return [...m.values()].map(p => { const st = p.itens.map(o => o.status || "Enviado"), apr = p.itens.filter(o => o.status === "Aprovado");
+    return {...p, sit: apr.length ? "Aprovada" : st.every(x => x === "Recusado") ? "Recusada" : "Aguardando", valor: sum(p.itens, o => num(o.valor) || 0), valorApr: sum(apr, o => num(o.valor) || 0)}; }); }
+function resumoAprov(ps){ const a = ps.filter(p => p.sit === "Aprovada"), r = ps.filter(p => p.sit === "Recusada"), g = ps.filter(p => p.sit === "Aguardando");
+  return {n: ps.length, a: a.length, r: r.length, g: g.length, taxa: a.length + r.length ? a.length / (a.length + r.length) : null, medio: a.length ? sum(a, p => p.valorApr) / a.length : null, vApr: sum(a, p => p.valorApr)}; }
+function painelAprovacao(){
+  const ps = propostasDe(S.orcamentos), t = hoje();
+  const meses = [...Array(6)].map((_, i) => { const d = new Date(t.getFullYear(), t.getMonth() - 5 + i, 1), f = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    return {lab: d.toLocaleDateString("pt-BR", {month: "long", year: "numeric"}), ...resumoAprov(ps.filter(p => p.data && pd(p.data) >= d && pd(p.data) < f))}; }).reverse();
+  const tot = resumoAprov(ps), linha = (rot, x, cls = "") => `<tr${cls}><td>${rot}</td><td class="n">${x.n}</td><td class="n">${x.a}</td><td class="n">${x.r}</td><td class="n">${x.g}</td><td class="n"><b>${x.taxa == null ? "—" : pct(x.taxa)}</b></td><td class="n">${x.medio == null ? "—" : brl0(x.medio)}</td></tr>`;
+  const cab = `<thead><tr><th></th><th class="n">Enviadas</th><th class="n">Aprovadas</th><th class="n">Recusadas</th><th class="n">Aguardando</th><th class="n">Taxa de aprovação</th><th class="n">Valor médio aprovado</th></tr></thead>`;
+  const porCli = SEL === "todos" ? DB.clientes.map(c => ({c, x: resumoAprov(ps.filter(p => p.cliente === c.id))})).filter(l => l.x.n).sort((a, b) => b.x.vApr - a.x.vApr) : [];
+  return `<div class="grid" style="margin-top:16px">
+    <div class="panel"><h2>Aprovação de propostas por mês</h2>${ps.length ? `<div class="tw"><table>${cab}<tbody>${meses.map(m => linha(m.lab, m)).join("")}${linha("<b>Total geral</b>", tot, ' class="tot"')}</tbody></table></div><p class="note">Taxa = aprovadas ÷ (aprovadas + recusadas), pela data da proposta. Uma proposta com vários projetos conta uma vez e é aprovada se algum projeto dela foi aprovado.</p>` : `<p class="empty">Nenhuma proposta ainda.</p>`}</div>
+    ${porCli.length ? `<div class="panel"><h2>Aprovação por cliente</h2><div class="tw"><table>${cab}<tbody>${porCli.map(l => linha(esc(l.c.nome || "Cliente sem nome"), l.x)).join("")}</tbody></table></div></div>` : ""}
+  </div>`;
+}
 function porClientePainel(){
   const linhas = DB.clientes.map(c => { const rs = DB.projetos.filter(p => cliDoRec(p) === c.id).map(calc).filter(r => r.p.status !== "Cancelado" && noPeriodo(r) && (filtro.status === "Todos" || r.p.status === filtro.status));
     return {c, n: rs.length, contr: sum(rs, r => r.valor), rec: sum(rs, r => r.recebido), sal: sum(rs, r => r.saldo), venc: sum(rs.filter(r => r.atraso), r => r.saldo), atr: rs.filter(r => r.dias < 0).length}; }).sort((a, b) => b.contr - a.contr);
@@ -706,6 +743,10 @@ V.dashboard.bind = () => {
   $("#pdfD").onclick = async () => { const b = $("#pdfD"); b.disabled = true; b.textContent = "Gerando…";
     try { if (await pdfDe($("#main"), `${SEL === "todos" ? "Todos os clientes - Dashboard geral" : prefixoCli(SEL) + "Dashboard"} - ${iso(hoje())}.pdf`, {paisagem: true, fundo: getComputedStyle(document.body).backgroundColor})) toast("Dashboard salvo em PDF."); }
     catch (e) { toast(e.message); } finally { const x = $("#pdfD"); if (x) { x.disabled = false; x.textContent = "Salvar em PDF"; } } };
+  $("#relPdf").onclick = async () => { const b = $("#relPdf"), mes = $("#relMes").value; if (!/^\d{4}-\d{2}$/.test(mes)) return toast("Escolha o mês do relatório.");
+    b.disabled = true; b.textContent = "Gerando…";
+    try { if (await relatorioMensal(mes)) toast("Relatório mensal salvo em PDF."); } catch (e) { toast(e.message || "Não foi possível gerar o relatório."); }
+    finally { const x = $("#relPdf"); if (x) { x.disabled = false; x.textContent = "Relatório mensal (PDF)"; } } };
   $("#fPer").onchange = e => { filtro.periodo = e.target.value; render(); };
   $("#fSt").onchange = e => { filtro.status = e.target.value; render(); };
 };
@@ -729,7 +770,7 @@ function papelProposta(f, n){
     <div class="sec">3. Entregáveis</div><p>${ph(f.entregaveis,"—")}</p>
     <div class="sec">4. Investimento</div>
     <table><thead><tr><th>Descrição</th><th class="c">Qtd.</th><th class="n">Valor</th></tr></thead><tbody>${itensDe(f).map((it, i) => `<tr><td>${ph(it.projeto, "Projeto" + (i ? " " + (i + 1) : ""))}</td><td class="c">1</td><td class="n">${brl(num(it.valor)||0)}</td></tr>`).join("")}<tr class="tot"><td></td><td class="n">Total</td><td class="n">${brl(itensDe(f).reduce((t, it) => t + (num(it.valor)||0), 0))}</td></tr></tbody></table>
-    <div class="sec">5. Prazo de entrega</div><p>${f.entrega ? dbr(f.entrega) + (dias != null ? ` (${dias} dias corridos a partir da aprovação)` : "") : "A combinar"}</p>
+    <div class="sec">5. Prazo de entrega</div>${prazoTexto(f).map(t => `<p>${esc(t)}</p>`).join("")}
     <div class="sec">6. Condições de pagamento</div><p>${esc(c.condicao || "A combinar")}.</p>
     <p>Pagamento em até ${num(f.prazo) ?? num(c.prazo) ?? 30} dias após a entrega. Em caso de atraso: multa de ${(num(c.multa)||0).toLocaleString("pt-BR")}% e juros de ${(num(c.juros)||0).toLocaleString("pt-BR")}% ao mês sobre o saldo.</p>
     <div class="sec">7. Revisões</div><p>Estão incluídas ${num(f.revInc) ?? num(c.revInc) ?? 0} revisões. ${revTexto(f, c)}</p>
@@ -755,13 +796,15 @@ V.proposta = () => {
       <div class="wide"><label class="muted" style="font-size:12.5px;font-weight:600">Mais projetos nesta proposta</label>${(f.extras || []).map((x, i) => `<div class="ex-row">
         <div class="fld"><label for="pfx_${i}_projeto">Nome do projeto ${i + 2}</label><input id="pfx_${i}_projeto" data-ex="${i}" data-campo="projeto" value="${esc(x.projeto || "")}"></div>
         <div class="fld"><label for="pfx_${i}_valor">Valor (R$)</label><input id="pfx_${i}_valor" data-ex="${i}" data-campo="valor" type="number" min="0" step="0.01" value="${esc(x.valor ?? "")}"></div>
+        <div class="fld"><label for="pfx_${i}_entrega">Data de entrega</label><input id="pfx_${i}_entrega" data-ex="${i}" data-campo="entrega" type="date" value="${esc(x.entrega || "")}" title="Vazio = mesma data do primeiro projeto"></div>
         <div class="fld"><label for="pfx_${i}_h">Horas estimadas</label><div class="hms">${[["h","h",hmsPartes(x.horas).h,""],["m","min",hmsPartes(x.horas).m,'max="59"'],["s","s",hmsPartes(x.horas).s,'max="59"']].map(([k,u,v,mx]) => `<span class="hms-c"><input id="pfx_${i}_${k}" data-ex="${i}" data-campo="${k}" type="number" min="0" ${mx} step="1" inputmode="numeric" value="${v ?? ""}" placeholder="0" aria-label="Horas estimadas do projeto ${i + 2}: ${u}"><small>${u}</small></span>`).join("")}</div></div>
         <button class="btn danger sm" type="button" data-exdel="${i}" aria-label="Remover projeto ${i + 2}">Remover</button></div>`).join("")}
         <button class="btn" type="button" id="pfAddProj">+ Adicionar projeto</button></div>
       <div class="fld wide"><label for="pf_escopo">Escopo do serviço</label><textarea id="pf_escopo" data-k="escopo" rows="4">${esc(f.escopo)}</textarea></div>
       <div class="fld wide"><label for="pf_entregaveis">Entregáveis</label><textarea id="pf_entregaveis" data-k="entregaveis" rows="2">${esc(f.entregaveis)}</textarea></div>
       <div class="fld wide"><label for="pf_obs">Observações</label><textarea id="pf_obs" data-k="obs" rows="2">${esc(f.obs)}</textarea></div>
-      <div class="fld wide"><label>Checklist de entrega <span class="note" style="font-weight:400">(controle interno: não sai no PDF)</span></label><div class="checks">${CHECK.map((c, i) => `<label><input type="checkbox" data-ck="${i}" ${entregarDe(f)[i] ? "checked" : ""}> ${c}</label>`).join("")}</div></div>
+      <div class="fld wide"><label>Checklist de entrega <span class="note" style="font-weight:400">(controle interno: não sai no PDF)</span></label><div class="checks">${checkTodos().map((c, i) => c.oculto ? "" : `<label><input type="checkbox" data-ck="${i}" ${entregarDe(f)[i] ? "checked" : ""}> ${esc(c.nome)}${i >= CHECK.length ? ` <button type="button" class="ck-x" data-ckdel="${i}" aria-label="Remover o item ${esc(c.nome)}" title="Remover este item da lista">✕</button>` : ""}</label>`).join("")}</div>
+        <div class="ck-novo"><input id="pfCkNovo" placeholder="Novo item do checklist (ex.: Lista de corte)" maxlength="40"><button class="btn sm" type="button" id="pfCkAdd">Adicionar item</button></div></div>
       <div class="fld wide"><label>Anexos do cliente <span class="note" style="font-weight:400">(documento, foto ou PDF que o cliente passou: não saem no PDF)</span></label>
         ${(f.anexos || []).length ? `<ul class="anx-lista">${f.anexos.map(a => `<li><span>📎 ${esc(a.nome)} <span class="note">(${tamTxt(a.tamanho)})</span></span><span><button class="btn sm" type="button" data-anx="${a.id}">Baixar</button> <button class="btn sm danger" type="button" data-anxdel="${a.id}">Remover</button></span></li>`).join("")}</ul>` : `<p class="note" style="margin:0 0 6px">Nenhum anexo.</p>`}
         <div><label class="btn" for="pfAnexoIn" id="pfAnexoBtn">Anexar arquivo</label><input id="pfAnexoIn" type="file" multiple hidden accept="${ANX_ACCEPT}"></div></div>
@@ -779,13 +822,20 @@ V.proposta.bind = () => {
   $("#pform").addEventListener("input", e => { if (e.target.dataset.hms) { const g = x => $("#pf_horas_" + x).value, hv = hmsLer({horas__h: g("h"), horas__m: g("m"), horas__s: g("s")}, "horas"); FORM.horas = hv == null ? "" : hv;
       mostrarSug(); return; }
     if (e.target.dataset.ex != null) { const i = +e.target.dataset.ex, x = FORM.extras[i], cp = e.target.dataset.campo;
-      if (cp === "projeto" || cp === "valor") x[cp] = e.target.value;
+      if (cp === "projeto" || cp === "valor" || cp === "entrega") x[cp] = e.target.value;
       else { const g = k => $(`#pfx_${i}_${k}`).value, hv = hmsLer({h__h: g("h"), h__m: g("m"), h__s: g("s")}, "h"); x.horas = hv == null ? "" : hv; }
       $("#pw").innerHTML = papelProposta(FORM, proxNum()); mostrarSug(); return; }
     const k = e.target.dataset.k; if (!k) return; FORM[k] = e.target.value;
     $("#pw").innerHTML = papelProposta(FORM, proxNum());
     if (k === "horas") mostrarSug(); });
   $("#limpar").onclick = () => { (FORM.anexos || []).forEach(a => { if (!anexoEmUso(a)) apagarAnexoProp(a); }); FORM = novoForm(); render(); };
+  $("#pfCkAdd").onclick = () => { const nome = $("#pfCkNovo").value.trim(); if (!nome) return toast("Digite o nome do item.");
+    if (checkTodos().some(c => !c.oculto && c.nome.toLowerCase() === nome.toLowerCase())) return toast("Esse item já existe.");
+    DB.config.checkExtra = [...(DB.config.checkExtra || []), {nome}]; persistir.soConfig = true; persistir("config"); persistir.soConfig = false;
+    FORM.entregar = entregarDe(FORM); FORM.entregar[checkTodos().length - 1] = true; render(); toast(`Item "${nome}" adicionado ao checklist.`); };
+  document.querySelectorAll("[data-ckdel]").forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); const i = +b.dataset.ckdel - CHECK.length, it = (DB.config.checkExtra || [])[i]; if (!it) return;
+    if (!confirm(`Remover "${it.nome}" da lista do checklist? Os projetos que já usam esse item deixam de mostrá-lo.`)) return;
+    DB.config.checkExtra = DB.config.checkExtra.map((x, k) => k === i ? {...x, oculto: true} : x); persistir.soConfig = true; persistir("config"); persistir.soConfig = false; render(); });
   $("#pfAddProj").onclick = () => { FORM.extras = [...(FORM.extras || []), {projeto: "", valor: "", horas: ""}]; render(); const n = FORM.extras.length - 1, el = $(`#pfx_${n}_projeto`); if (el) el.focus(); };
   document.querySelectorAll("[data-exdel]").forEach(b => b.onclick = () => { FORM.extras.splice(+b.dataset.exdel, 1); render(); });
   $("#pfAnexoIn").onchange = async e => { const fs = [...e.target.files]; e.target.value = ""; if (!fs.length) return; const bt = $("#pfAnexoBtn"); bt.textContent = "Enviando…";
@@ -853,7 +903,7 @@ async function pdfProposta(f, n, nome, cli){
   o.tabela({head: [["Descrição", "Qtd.", "Valor"]], body: itensDe(f).map(it => [limpa(it.projeto), "1", brl(num(it.valor) || 0)]), foot: [["", "Total", brl(itensDe(f).reduce((t, it) => t + (num(it.valor) || 0), 0))]],
     footStyles: {textColor: NAVY, fontStyle: "bold", fontSize: 11}, columnStyles: {1: {halign: "center", cellWidth: 18}, 2: {halign: "right", cellWidth: 40}},
     didParseCell: h => { if (h.column.index === 2) h.cell.styles.halign = "right"; if (h.column.index === 1 && h.section !== "foot") h.cell.styles.halign = "center"; if (h.column.index === 1 && h.section === "foot") h.cell.styles.halign = "right"; }});
-  o.barra("5. PRAZO DE ENTREGA"); o.txt(f.entrega ? dbr(f.entrega) + (dias != null ? ` (${dias} dias corridos a partir da aprovação)` : "") : "A combinar");
+  o.barra("5. PRAZO DE ENTREGA"); prazoTexto(f).forEach(t => o.txt(t));
   o.barra("6. CONDIÇÕES DE PAGAMENTO"); o.txt((c.condicao || "A combinar") + ".");
   o.txt(`Pagamento em até ${num(f.prazo) ?? num(c.prazo) ?? 30} dias após a entrega. Em caso de atraso: multa de ${(num(c.multa) || 0).toLocaleString("pt-BR")}% e juros de ${(num(c.juros) || 0).toLocaleString("pt-BR")}% ao mês sobre o saldo.`);
   o.barra("7. REVISÕES"); o.txt(`Estão incluídas ${num(f.revInc) ?? num(c.revInc) ?? 0} revisões. ${revTexto(f, c)}`);
@@ -861,6 +911,35 @@ async function pdfProposta(f, n, nome, cli){
   o.barra("ACEITE DA PROPOSTA"); o.txt("Declaro estar de acordo com o escopo, o prazo e as condições desta proposta.", 9, false, CINZA);
   assinaturas(o, [c.eu || "", c.nome || ""]);
   return salvarPdf(d, nome);
+}
+async function relatorioMensal(mes){
+  const [ano, m] = mes.split("-").map(Number), ini = new Date(ano, m - 1, 1), fim = new Date(ano, m, 1), noMes = s => s && pd(s) >= ini && pd(s) < fim;
+  const rotMes = ini.toLocaleDateString("pt-BR", {month: "long", year: "numeric"}), todosCli = SEL === "todos";
+  const rs = todos().filter(r => r.p.status !== "Cancelado"), ent = rs.filter(r => noMes(r.entrega)), pags = S.pagamentos.filter(p => noMes(p.data)).sort((a, b) => (a.data || "").localeCompare(b.data || ""));
+  const fat = sum(ent, r => r.valor), rec = sum(pags, p => num(p.valor) || 0), arec = sum(rs, r => r.saldo), horas = sum(ent, r => r.horas), lucro = sum(ent, r => r.lucro);
+  const o = docPdf(), d = o.d, c = todosCli ? (DB.clientes[0] || CLIENTE_PADRAO) : C(); o.cli = c;
+  o.cabecalho("RELATÓRIO MENSAL", [[rotMes.charAt(0).toUpperCase() + rotMes.slice(1), "nr"], [todosCli ? "Todos os clientes" : (c.nome || "Cliente")], ["Gerado em " + hoje().toLocaleDateString("pt-BR")]]);
+  const hTxt = h => { const p = hmsPartes(h); return p.h == null ? "—" : `${p.h} h ${String(p.m).padStart(2, "0")} min`; };
+  const meta = todosCli ? (num(DB.config.metaGeral) || sum(DB.clientes, x => num(x.meta) || 0)) : (num(c.meta) || 0);
+  o.barra("1. RESUMO DO MÊS");
+  o.tabela({head: [["Indicador", "Valor"]], body: [["Faturado (entregas do mês)", brl(fat)], ["Recebido no mês", brl(rec)], ["A receber hoje (saldo em aberto)", brl(arec)], ["Projetos entregues no mês", String(ent.length)],
+    ["Horas gastas nos projetos entregues", hTxt(horas)], ["Lucro dos projetos entregues", brl(lucro)], ...(meta ? [["Meta do mês", `${brl(meta)} (${pct(fat / meta)} atingido)`]] : [])],
+    columnStyles: {1: {halign: "right", cellWidth: 70}}});
+  if (todosCli) { const linhas = DB.clientes.map(cl => { const rc = rs.filter(r => cliDoRec(r.p) === cl.id), ec = rc.filter(r => noMes(r.entrega)), pc = pags.filter(p => cliDoRec(p) === cl.id);
+      return [cl.nome || "Cliente sem nome", brl(sum(ec, r => r.valor)), brl(sum(pc, p => num(p.valor) || 0)), brl(sum(rc, r => r.saldo)), hTxt(sum(ec, r => r.horas)), brl(sum(ec, r => r.lucro))]; });
+    o.barra("2. POR CLIENTE"); o.tabela({head: [["Cliente", "Faturado", "Recebido", "A receber", "Horas", "Lucro"]], body: linhas, styles: {fontSize: 8.5, cellPadding: 1.4},
+      columnStyles: {1: {halign: "right"}, 2: {halign: "right"}, 3: {halign: "right"}, 4: {halign: "right"}, 5: {halign: "right"}}}); }
+  const sec = n => (todosCli ? n + 1 : n) + ". ";
+  o.barra(sec(2) + "PROJETOS ENTREGUES NO MÊS");
+  if (ent.length) o.tabela({head: [["Nº", "Projeto", ...(todosCli ? ["Cliente"] : []), "Entrega", "Status", "Valor", "Saldo"]], body: ent.sort((a, b) => (a.entrega || "").localeCompare(b.entrega || "")).map(r => [r.num || "—", r.p.projeto, ...(todosCli ? [clienteObj(cliDoRec(r.p)).nome || ""] : []), dbr(r.entrega), r.p.status, brl(r.valor), brl(r.saldo)]),
+    styles: {fontSize: 8.5, cellPadding: 1.4}, columnStyles: todosCli ? {5: {halign: "right"}, 6: {halign: "right"}} : {4: {halign: "right"}, 5: {halign: "right"}}}); else o.txt("Nenhum projeto com entrega neste mês.");
+  o.barra(sec(3) + "PAGAMENTOS RECEBIDOS NO MÊS");
+  if (pags.length) o.tabela({head: [["Recibo", "Data", "Projeto", ...(todosCli ? ["Cliente"] : []), "Forma", "Valor"]], body: pags.map(p => [numRecibo(p) || "—", dbr(p.data), p.projeto || "", ...(todosCli ? [clienteObj(cliDoRec(p)).nome || ""] : []), p.forma || "", brl(num(p.valor) || 0)]),
+    foot: [["", "", "", ...(todosCli ? [""] : []), "Total", brl(rec)]], footStyles: {textColor: NAVY, fontStyle: "bold"}, styles: {fontSize: 8.5, cellPadding: 1.4}, columnStyles: {[todosCli ? 5 : 4]: {halign: "right"}}}); else o.txt("Nenhum pagamento recebido neste mês.");
+  const ap = resumoAprov(propostasDe(S.orcamentos.filter(x => noMes(x.data))));
+  o.barra(sec(4) + "PROPOSTAS DO MÊS");
+  o.txt(ap.n ? `${ap.n} proposta(s) enviada(s): ${ap.a} aprovada(s), ${ap.r} recusada(s) e ${ap.g} aguardando resposta. Taxa de aprovação: ${ap.taxa == null ? "—" : pct(ap.taxa)}. Valor aprovado: ${brl(ap.vApr)}.` : "Nenhuma proposta enviada neste mês.");
+  return salvarPdf(d, `${todosCli ? "Todos os clientes - " : prefixoCli(SEL)}Relatório mensal - ${mes}.pdf`);
 }
 function assinaturas(o, nomes){
   const d = o.d; o.quebra(28); o.y += 16; d.setDrawColor(85, 85, 85); d.setLineWidth(0.3);
@@ -898,7 +977,7 @@ async function pdfRecibo(x, nome){
 }
 async function gerarProposta(){
   const f = FORM, ob = f.revOf && orcPorId(f.revOf), velhos = ob ? grupoDe(ob) : [];
-  const itens = itensDe(f).map(it => ({projeto: String(it.projeto || "").trim(), valor: num(it.valor), horas: num(it.horas)}));
+  const itens = itensDe(f).map(it => ({projeto: String(it.projeto || "").trim(), valor: num(it.valor), horas: num(it.horas), entrega: it.entrega || f.entrega || ""}));
   if (itens.some(it => !it.projeto)) return toast(itens.length > 1 ? "Preencha o nome de todos os projetos." : "Preencha o nome do projeto.");
   if (itens.some(it => !(it.valor > 0))) return toast(itens.length > 1 ? "Preencha o valor de todos os projetos." : "Preencha o valor da proposta.");
   if (new Set(itens.map(it => it.projeto)).size !== itens.length) return toast("Dois projetos da proposta estão com o mesmo nome.");
@@ -914,11 +993,11 @@ async function gerarProposta(){
     const novos = [];
     itens.forEach((it, i) => { const marca = itens.length > 1 ? {grupo, item: i + 1} : {};
       const o = velhos[i];
-      if (o) { const antesR = {...o, sit: o.status}; Object.assign(o, comum, {projeto: it.projeto, valor: it.valor, horas: it.horas, rev: f.rev, status: "Enviado"}, marca); if (itens.length === 1) delete o.item; if (grupo && !o.grupo) o.grupo = grupo;
+      if (o) { const antesR = {...o, sit: o.status}; Object.assign(o, comum, {projeto: it.projeto, valor: it.valor, horas: it.horas, entrega: it.entrega, rev: f.rev, status: "Enviado"}, marca); if (itens.length === 1) delete o.item; if (grupo && !o.grupo) o.grupo = grupo;
         registrar({orc: o.id, projeto: it.projeto}, antesR, {...o, sit: o.status}, {...CAMPOS_HIST_O, rev: "Revisão da proposta"});
         const pj = DB.projetos.find(q => q.orc === o.id); if (pj && pj.projeto !== it.projeto) pj.projeto = it.projeto;
         if (!pj) S.projetos.push({id:uid(), orc:o.id, cliente:SEL, projeto:it.projeto, status:"Pendente", check:Array(8).fill(false)}); novos.push(o); }
-      else { const oid = uid(), no = {id:oid, cliente:SEL, num:n, rev: ob ? f.rev : 0, status:"Enviado", ...comum, projeto: it.projeto, valor: it.valor, horas: it.horas, ...marca}; S.orcamentos.push(no);
+      else { const oid = uid(), no = {id:oid, cliente:SEL, num:n, rev: ob ? f.rev : 0, status:"Enviado", ...comum, projeto: it.projeto, valor: it.valor, horas: it.horas, entrega: it.entrega, ...marca}; S.orcamentos.push(no);
         S.projetos.push({id:uid(), orc:oid, cliente:SEL, projeto:it.projeto, status:"Pendente", check:Array(8).fill(false)}); novos.push(no); } });
     sobram.forEach(o => { const pjs = DB.projetos.filter(q => q.orc === o.id); if (o.pdf) delete o.pdf; paraLixeira("orcamentos", o, "o orçamento Nº " + numOrc(o), pjs.map(item => ({k: "projetos", item})));
       S.orcamentos = S.orcamentos.filter(x => x !== o); S.projetos = S.projetos.filter(q => q.orc !== o.id); });
@@ -988,12 +1067,23 @@ function recuperar(id){
 V.orcamentos = () => {
   const L = [...S.orcamentos].sort((a,b) => (clienteObj(a.cliente).codigo - clienteObj(b.cliente).codigo) || (b.num - a.num));
   return `<div class="top"><div><h1>Orçamentos</h1><div class="sub">Cada proposta gerada entra aqui. Os nomes de projeto daqui alimentam a aba Projetos.</div></div><div class="acts"><a class="btn pri" href="#proposta">Nova proposta</a></div></div>
-  <div class="panel">${L.length ? `<div class="tw"><table><thead><tr><th>Nº</th><th>Data</th>${SEL === "todos" ? "<th>Cliente</th>" : ""}<th>Projeto</th><th class="n">Valor</th><th>Entrega</th><th class="n">Horas est.</th><th class="n">Revisões</th><th class="n">Prazo pgto</th><th>Situação</th></tr></thead><tbody>${L.map(o=>`<tr class="click" data-id="${o.id}"><td>${numOrc(o)}${o.rev ? " R" + o.rev : ""}</td><td>${dbr(o.data)}</td>${SEL === "todos" ? `<td>${esc(clienteObj(o.cliente).nome || "—")}</td>` : ""}<td>${esc(o.projeto)}</td><td class="n">${brl(o.valor)}</td><td>${dbr(o.entrega)}</td><td class="n">${o.horas??"—"}</td><td class="n">${o.revInc??"padrão"}</td><td class="n">${o.prazo!=null?o.prazo+" d":"padrão"}</td><td>${pillOrc(o.status)}</td></tr>`).join("")}</tbody></table></div>`
+  <div class="panel">${L.length ? `<div class="tw"><table><thead><tr><th>Nº</th><th>Data</th>${SEL === "todos" ? "<th>Cliente</th>" : ""}<th>Projeto</th><th class="n">Valor</th><th>Entrega</th><th class="n">Horas est.</th><th class="n">Revisões</th><th class="n">Prazo pgto</th><th>Situação</th></tr></thead><tbody>${L.map(o=>`<tr class="click" data-id="${o.id}"><td>${numOrc(o)}${o.rev ? " R" + o.rev : ""}</td><td>${dbr(o.data)}</td>${SEL === "todos" ? `<td>${esc(clienteObj(o.cliente).nome || "—")}</td>` : ""}<td>${esc(o.projeto)}</td><td class="n">${brl(o.valor)}</td><td>${dbr(o.entrega)}</td><td class="n">${o.horas??"—"}</td><td class="n">${o.revInc??"padrão"}</td><td class="n">${o.prazo!=null?o.prazo+" d":"padrão"}</td><td><div class="sit-cel"><span class="sit-pill">${pillOrc(o.status)}</span><span class="sit-bts" role="group" aria-label="Mudar situação" data-noxl>${[["Aprovado","Aprovado","s-ok"],["Recusado","Recusado","s-no"],["Enviado","Pendente","s-pe"]].map(([st, rot, cl]) => `<button type="button" class="btn sm ${cl}${(o.status || "Enviado") === st ? " ativo" : ""}" data-sit="${st}" data-o="${o.id}" aria-pressed="${(o.status || "Enviado") === st}">${rot}</button>`).join("")}</span></div></td></tr>`).join("")}</tbody></table></div>`
   : `<p class="empty"><b>Nenhum orçamento ainda.</b> Crie a primeira <a href="#proposta">proposta</a>.</p>`}</div>`;
 };
-V.orcamentos.bind = () => document.querySelectorAll("tr[data-id]").forEach(tr => tr.onclick = () => {
+function mudarSituacao(o, st){
+  const stAntes = o.status || "Enviado"; if (st === stAntes) return false;
+  const antesO = {...o, sit: o.status}; o.status = st;
+  if (st === "Aprovado" || st === "Recusado") { const pj = DB.projetos.find(q => q.orc === o.id);
+    const alvoSt = st === "Recusado" ? "Cancelado" : (pj && pj.status !== "Concluído" ? "Em produção" : null);
+    if (pj && alvoSt && pj.status !== alvoSt) { const antesP = {...pj}; pj.status = alvoSt; registrar(pj, antesP, pj, CAMPOS_HIST_P); persistir("projetos"); } }
+  registrar({orc: o.id, projeto: o.projeto}, antesO, {...o, sit: o.status}, CAMPOS_HIST_O); save("orcamentos"); return true;
+}
+V.orcamentos.bind = () => { document.querySelectorAll("[data-sit]").forEach(b => b.onclick = e => { e.stopPropagation(); const o = DB.orcamentos.find(x => x.id === b.dataset.o); if (!o) return;
+    if (mudarSituacao(o, b.dataset.sit)) { render(); toast(`Orçamento Nº ${numOrc(o)}: ${b.dataset.sit === "Enviado" ? "Pendente" : b.dataset.sit}${b.dataset.sit === "Aprovado" ? " (projeto em produção)" : b.dataset.sit === "Recusado" ? " (projeto cancelado)" : ""}.`); } });
+  V.orcamentos.bindLinhas(); };
+V.orcamentos.bindLinhas = () => document.querySelectorAll("tr[data-id]").forEach(tr => tr.onclick = () => {
   const o = S.orcamentos.find(x => x.id === tr.dataset.id);
-  dlg(`Orçamento Nº ${numOrc(o)}${o.rev ? " R" + o.rev : ""}`, `<div class="form">${fs_("status","Situação",ST_ORC,o.status || "Enviado")}${f_("num",`Nº (sequência do cliente ${codCli(o.cliente)})`,o.num,"number")}${f_("data","Data",o.data,"date")}<div class="wide">${f_("projeto","Projeto",o.projeto)}</div>${f_("valor","Valor (R$)",o.valor,"number",'step="0.01"')}${f_("entrega","Data de entrega",o.entrega,"date")}${fh_("horas","Horas estimadas",o.horas)}${f_("revInc","Revisões incluídas",o.revInc,"number")}${f_("prazo","Prazo de pagamento (dias)",o.prazo,"number")}${ft_("escopo","Escopo",o.escopo)}${ft_("entregaveis","Entregáveis",o.entregaveis)}${ft_("obs","Observações",o.obs)}</div>${grupoDe(o).length > 1 ? `<p class="note">Esta proposta tem ${grupoDe(o).length} projetos: ${grupoDe(o).map(x => esc(numOrc(x) + " " + x.projeto)).join(" · ")}.</p>` : ""}${(o.anexos || []).length ? `<div style="margin-top:10px"><label class="muted" style="font-size:12.5px;font-weight:600">Anexos do cliente</label><ul class="anx-lista">${o.anexos.map(a => `<li><span>📎 ${esc(a.nome)} <span class="note">(${tamTxt(a.tamanho)})</span></span><button class="btn sm" type="button" data-oanx="${a.id}">Baixar</button></li>`).join("")}</ul><p class="note" style="margin:0">Para trocar os anexos, use Revisar proposta.</p></div>` : ""}<p class="note">Mudar o nome do projeto aqui também muda o nome em Projetos, Pagamentos, Revisões e Arquivos.</p>`,
+  dlg(`Orçamento Nº ${numOrc(o)}${o.rev ? " R" + o.rev : ""}`, `<div class="form">${fs_("status","Situação",ST_ORC,o.status || "Enviado")}${f_("num",`Nº (sequência do cliente ${codCli(o.cliente)})`,o.num,"number")}${f_("data","Data",o.data,"date")}<div class="wide">${f_("projeto","Projeto",o.projeto)}</div>${f_("valor","Valor (R$)",o.valor,"number",'step="0.01"')}${f_("entrega","Data de entrega",o.entrega,"date")}${fh_("horas","Horas estimadas",o.horas)}${f_("revInc","Revisões incluídas",o.revInc,"number")}${f_("prazo","Prazo de pagamento (dias)",o.prazo,"number")}${ft_("escopo","Escopo",o.escopo)}${ft_("entregaveis","Entregáveis",o.entregaveis)}${ft_("obs","Observações",o.obs)}</div><div style="margin-top:10px"><label class="muted" style="font-size:12.5px;font-weight:600">Checklist de entrega <span class="note" style="font-weight:400">(controle interno: não sai no PDF)</span></label><div class="checks">${checkTodos().map((c, i) => c.oculto ? "" : `<label><input type="checkbox" name="en${i}" ${entregarDe(o)[i] ? "checked" : ""}> ${esc(c.nome)}</label>`).join("")}</div></div>${grupoDe(o).length > 1 ? `<p class="note">Esta proposta tem ${grupoDe(o).length} projetos: ${grupoDe(o).map(x => esc(numOrc(x) + " " + x.projeto)).join(" · ")}.</p>` : ""}${(o.anexos || []).length ? `<div style="margin-top:10px"><label class="muted" style="font-size:12.5px;font-weight:600">Anexos do cliente</label><ul class="anx-lista">${o.anexos.map(a => `<li><span>📎 ${esc(a.nome)} <span class="note">(${tamTxt(a.tamanho)})</span></span><button class="btn sm" type="button" data-oanx="${a.id}">Baixar</button></li>`).join("")}</ul><p class="note" style="margin:0">Para trocar os anexos, use Revisar proposta.</p></div>` : ""}<p class="note">Mudar o nome do projeto aqui também muda o nome em Projetos, Pagamentos, Revisões e Arquivos.</p>`,
     `<button class="btn danger" type="button" id="dDel">Apagar</button><button class="btn" type="button" id="dMail">Enviar por e-mail</button><button class="btn" type="button" id="dPdf">Gerar PDF</button><button class="btn" type="button" id="dRev">Revisar proposta (R${(o.rev || 0) + 1})</button><button class="btn pri" type="button" id="dOk">Salvar</button>`);
   $("#dDel").onclick = () => { $("#dlg").close(); const pjs = DB.projetos.filter(q => q.orc === o.id), nome = "o orçamento Nº " + numOrc(o);
     if (!confirm(`Apagar ${nome}${pjs.length ? " e o projeto ligado a ele" : ""}${o.pdf ? " (o PDF sai de Propostas PDF)" : ""}? Fica 30 dias na Lixeira (Banco de dados).`)) return;
@@ -1017,7 +1107,7 @@ V.orcamentos.bind = () => document.querySelectorAll("tr[data-id]").forEach(tr =>
   $("#dRev").onclick = () => { $("#dlg").close(); if (SEL !== o.cliente) { SEL = o.cliente; try { localStorage.setItem("cp_sel", SEL); } catch (e) {} }
     const g = grupoDe(o), p0 = g[0];
     FORM = {revOf: p0.id, rev: (p0.rev || 0) + 1, projeto: p0.projeto, data: iso(hoje()), entrega: p0.entrega || "", valor: p0.valor ?? "", horas: p0.horas ?? "", revInc: p0.revInc ?? "", prazo: p0.prazo ?? "", escopo: p0.escopo || "", entregaveis: p0.entregaveis || ENT_PADRAO, obs: p0.obs || "", entregar: entregarDe(p0), revModo: p0.revModo || "", revVal: p0.revVal ?? "",
-      extras: g.slice(1).map(x => ({projeto: x.projeto, valor: x.valor ?? "", horas: x.horas ?? ""})), anexos: [...(p0.anexos || [])]}; ir("proposta"); };
+      extras: g.slice(1).map(x => ({projeto: x.projeto, valor: x.valor ?? "", horas: x.horas ?? "", entrega: x.entrega || ""})), anexos: [...(p0.anexos || [])]}; ir("proposta"); };
   $("#dOk").onclick = () => { const v = lerForm(), antigo = o.projeto, novo = v.projeto.trim(), stAntes = o.status;
     if (!novo) return toast("O projeto precisa de um nome.");
     if (novo !== antigo && DB.orcamentos.some(x => x.cliente === o.cliente && x.projeto === novo)) return toast("Este cliente já tem um orçamento com esse nome.");
@@ -1025,7 +1115,7 @@ V.orcamentos.bind = () => document.querySelectorAll("tr[data-id]").forEach(tr =>
     if (v.status !== stAntes && (v.status === "Aprovado" || v.status === "Recusado")) { const pj = DB.projetos.find(q => q.orc === o.id);
       const alvoSt = v.status === "Recusado" ? "Cancelado" : (pj && pj.status !== "Concluído" ? "Em produção" : null);
       if (pj && alvoSt && pj.status !== alvoSt) { const antesP = {...pj}; pj.status = alvoSt; registrar(pj, antesP, pj, CAMPOS_HIST_P); persistir("projetos"); } }
-    Object.assign(o, {num:num(v.num)||o.num, data:v.data, projeto:novo, valor:num(v.valor), entrega:v.entrega, horas:hmsLer(v, "horas"), revInc:num(v.revInc), prazo:num(v.prazo), escopo:v.escopo, entregaveis:v.entregaveis, obs:v.obs});
+    Object.assign(o, {num:num(v.num)||o.num, data:v.data, projeto:novo, valor:num(v.valor), entrega:v.entrega, horas:hmsLer(v, "horas"), revInc:num(v.revInc), prazo:num(v.prazo), escopo:v.escopo, entregaveis:v.entregaveis, obs:v.obs, entregar:checkTodos().map((_, i) => ("en" + i) in v ? !!v["en" + i] : entregarDe(o)[i])});
     registrar({orc: o.id, projeto: novo}, antesO, {...o, sit: o.status}, CAMPOS_HIST_O);
     if (novo !== antigo) ["projetos","pagamentos","revisoes","arquivos"].forEach(k => { S[k].forEach(x => { if (x.orc === o.id || (!x.orc && x.projeto === antigo)) x.projeto = novo; }); save(k); });
     save("orcamentos"); $("#dlg").close(); render(); toast("Orçamento salvo."); };
@@ -1061,13 +1151,13 @@ function editarProjeto(p, novo){
     ${f_("custos","Custos do projeto (R$)", p.custos, "number", 'step="0.01" min="0"')}
     ${f_("contato","Contato", p.contato)}
     ${ft_("escopo","Escopo / descrição", p.escopo ?? o.escopo)}${ft_("obs","Observações", p.obs)}
-    <div class="wide"><label class="muted" style="font-size:12.5px;font-weight:600">Checklist de entrega</label><div class="checks">${entregarDe(o).some(Boolean) ? CHECK.map((c,i)=> entregarDe(o)[i] ? `<label><input type="checkbox" name="ck${i}" ${(p.check||[])[i]?"checked":""}> ${c}</label>` : "").join("") : `<span class="note">Nenhum item de entrega marcado na proposta.</span>`}</div></div>
+    <div class="wide"><label class="muted" style="font-size:12.5px;font-weight:600">Checklist de entrega</label><div class="checks">${checkTodos().some((c, i) => entregarDe(o)[i] && !c.oculto) ? checkTodos().map((c,i)=> entregarDe(o)[i] && !c.oculto ? `<label><input type="checkbox" name="ck${i}" ${(p.check||[])[i]?"checked":""}> ${esc(c.nome)}</label>` : "").join("") : `<span class="note">Nenhum item de entrega marcado na proposta.</span>`}</div></div>
   </div>`, `${novo?"":`<button class="btn danger" type="button" id="dDel">Apagar</button>`}<button class="btn pri" type="button" id="dOk">Salvar</button>`);
   if (!novo) $("#dDel").onclick = () => { $("#dlg").close(); apagar("projetos", p.id, "o projeto "+p.projeto); };
   $("#dOk").onclick = () => { const v = lerForm();
     if (novo) { const ob = orcPorId(v.projeto); if (!ob) return toast("Escolha um projeto da lista de orçamentos."); p = {id:uid(), orc:ob.id, cliente:ob.cliente, projeto:ob.projeto}; S.projetos.push(p); }
     const antes = {...p}, stAntes = p.status;
-    Object.assign(p, {status:v.status, valor:num(v.valor), prazo:num(v.prazo), revInc:num(v.revInc), horasEst:hmsLer(v, "horasEst"), horas:hmsLer(v, "horas"), custos:num(v.custos), contato:v.contato, escopo:v.escopo, obs:v.obs, check:CHECK.map((_,i)=> ("ck"+i) in v ? v["ck"+i] : !!(p.check||[])[i])});
+    Object.assign(p, {status:v.status, valor:num(v.valor), prazo:num(v.prazo), revInc:num(v.revInc), horasEst:hmsLer(v, "horasEst"), horas:hmsLer(v, "horas"), custos:num(v.custos), contato:v.contato, escopo:v.escopo, obs:v.obs, check:checkTodos().map((_,i)=> ("ck"+i) in v ? v["ck"+i] : !!(p.check||[])[i])});
     if (!novo) registrar(p, antes, p, CAMPOS_HIST_P);
     const ob = orcDoRec(p); if (ob && stAntes !== p.status && ["Em produção","Concluído"].includes(p.status) && (ob.status || "Enviado") === "Enviado") { ob.status = "Aprovado"; registrar(p, {sit: "Enviado"}, {sit: "Aprovado"}, {sit: "Situação do orçamento"}); persistir("orcamentos"); }
     save("projetos"); $("#dlg").close(); render(); toast("Projeto salvo."); };
@@ -1196,9 +1286,9 @@ const ANX_ACCEPT = "image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.dwg,.dxf,.step
 const tamTxt = b => b >= 1048576 ? (b / 1048576).toLocaleString("pt-BR", {maximumFractionDigits: 1}) + " MB" : Math.max(1, Math.round((b || 0) / 1024)).toLocaleString("pt-BR") + " KB";
 const anxDoc = (a, i) => fbStore.doc(`${ESPACO}/dados/anx_${a.id}${i == null ? "" : "_" + i}`);
 const anexoEmUso = a => DB.orcamentos.some(o => (o.anexos || []).some(x => x.id === a.id)) || DB.lixeira.some(l => l.k === "orcamentos" && (l.item.anexos || []).some(x => x.id === a.id));
-async function guardarAnexoProp(f){
+async function guardarAnexoProp(f, base){
   if (f.size > 15 * 1048576) throw new Error("passa de 15 MB.");
-  const a = {id: uid(), nome: f.name, tamanho: f.size, mime: f.type || "application/octet-stream"};
+  const a = base ? {id: base.id, nome: base.nome, tamanho: f.size, mime: base.mime || f.type || "application/octet-stream"} : {id: uid(), nome: f.name, tamanho: f.size, mime: f.type || "application/octet-stream"};
   if (ONLINE) { const b64 = await b64DeBlob(f), T = 900000, partes = Math.max(1, Math.ceil(b64.length / T));
     for (let i = 0; i < partes; i++) await anxDoc(a, i).set({b64: b64.slice(i * T, (i + 1) * T)});
     await anxDoc(a).set({partes, nome: a.nome, mime: a.mime}); return {...a, tipo: "fb", partes}; }
@@ -1218,6 +1308,44 @@ async function apagarAnexoProp(a){ try { if (a.tipo === "fb" && fbStore) { for (
 async function baixarAnexoProp(a, b){ if (!a) return; const txt = b.textContent; b.disabled = true; b.textContent = "Baixando…";
   try { const blob = await lerAnexoProp(a); if (!blob) return toast("Anexo não encontrado."); const r = await salvarArquivo(a.nome, blob, {desc: "Arquivo", mime: a.mime || "application/octet-stream"}); if (r === "erro") toast("Não foi possível salvar o arquivo aqui."); }
   catch (e) { toast("Não foi possível abrir o anexo."); } finally { b.disabled = false; b.textContent = txt; } }
+/* backup completo: dados + PDFs das propostas + anexos, num .zip */
+async function backupCompleto(btn){
+  if (!window.JSZip) return toast("O compactador não carregou. Verifique a conexão e recarregue a página.");
+  const txt = btn.textContent; btn.disabled = true; btn.textContent = "Preparando…"; let falhas = 0;
+  try { const z = new JSZip(); z.file("backup.json", JSON.stringify({versao: 2, salvoEm: new Date().toISOString(), ...DB}, null, 1));
+    const pdfsFeitos = new Set();
+    for (const o of DB.orcamentos.filter(x => x.pdf)) { const k = chavePdf(o); if (pdfsFeitos.has(k)) continue; pdfsFeitos.add(k);
+      try { const b = await lerPdf(o); if (b) z.file(`pdfs/${k}.pdf`, b); else falhas++; } catch (e) { falhas++; } }
+    const anx = new Map(); [...DB.orcamentos, ...DB.lixeira.filter(l => l.k === "orcamentos").map(l => l.item)].forEach(o => (o.anexos || []).forEach(a => anx.set(a.id, a)));
+    for (const a of anx.values()) { try { const b = await lerAnexoProp(a); if (b) z.file(`anexos/${a.id}`, b); else falhas++; } catch (e) { falhas++; } }
+    for (const x of DB.arquivos.filter(x => x.anexo && x.anexo.url)) { try { const r = await fetch(x.anexo.url); if (r.ok) z.file(`arquivos/${x.id}`, await r.blob()); else falhas++; } catch (e) { falhas++; } }
+    btn.textContent = "Compactando…";
+    const blob = await z.generateAsync({type: "blob", compression: "DEFLATE"});
+    const r = await salvarArquivo(`Backup completo controle de projetos - ${iso(hoje())}.zip`, blob, {desc: "Backup completo", mime: "application/zip"});
+    if (r === "ok") { DB.config.ultimoBackup = new Date().toISOString(); persistir("config"); toast("Backup completo salvo" + (falhas ? ` (${falhas} arquivo(s) não encontrado(s) ficaram de fora).` : ".")); render(); }
+    else if (r === "erro") toast("Não foi possível salvar o backup aqui.");
+  } catch (e) { toast("Não foi possível montar o backup completo."); }
+  finally { btn.disabled = false; btn.textContent = txt; }
+}
+async function restaurarCompleto(f){
+  if (!window.JSZip) return toast("O compactador não carregou. Verifique a conexão e recarregue a página.");
+  let z, o; try { z = await JSZip.loadAsync(f); const j = z.file("backup.json"); if (!j) throw 0; o = JSON.parse(await j.async("string")); if (!o || !Array.isArray(o.projetos)) throw 0; }
+  catch (e) { return toast("Este arquivo não é um backup completo desta página."); }
+  if (!confirm("Restaurar substitui todos os dados atuais pelos do arquivo, incluindo PDFs e anexos. Continuar?")) return;
+  restaurarDados(o); toast("Dados restaurados. Recolocando PDFs e anexos…");
+  let ok = 0, falha = 0; const feitos = new Map();
+  for (const x of DB.orcamentos.filter(x => x.pdf)) { const k = chavePdf(x), arq = z.file(`pdfs/${k}.pdf`); if (!arq) { delete x.pdf; continue; }
+    try { const b = new Blob([await arq.async("arraybuffer")], {type: "application/pdf"}), nome = x.pdf.nome; delete x.pdf; await guardarPdf(x, b, nome); ok++; } catch (e) { falha++; } }
+  const todosAnx = [...DB.orcamentos, ...DB.lixeira.filter(l => l.k === "orcamentos").map(l => l.item)];
+  for (const dono of todosAnx) { if (!(dono.anexos || []).length) continue;
+    const novos = []; for (const a of dono.anexos) { if (feitos.has(a.id)) { novos.push(feitos.get(a.id)); continue; } const arq = z.file(`anexos/${a.id}`); if (!arq) { falha++; continue; }
+      try { const b = new Blob([await arq.async("arraybuffer")], {type: a.mime || "application/octet-stream"}); const na = await guardarAnexoProp(b, a); feitos.set(a.id, na); novos.push(na); ok++; } catch (e) { falha++; } }
+    dono.anexos = novos; }
+  if (!FORA) for (const x of DB.arquivos.filter(x => x.anexo)) { const arq = z.file(`arquivos/${x.id}`); if (!arq) continue;
+    try { const b = await arq.async("blob"), fl = new File([b], x.anexo.nome || x.nome || "arquivo", {type: b.type}); x.anexo = await enviarAnexo(fl); ok++; } catch (e) { falha++; } }
+  persistir("orcamentos"); persistir("lixeira"); persistir("arquivos"); render();
+  toast(`Backup completo restaurado: ${ok} arquivo(s) recolocado(s)${falha ? `, ${falha} não puderam ser recolocados` : ""}.`);
+}
 V.pdfs = () => {
   const L = S.orcamentos.filter(o => o.pdf).sort((a, b) => (b.pdf.em || "").localeCompare(a.pdf.em || ""));
   const quando = t => t ? new Date(t).toLocaleString("pt-BR", {dateStyle: "short", timeStyle: "short"}) : "—";
@@ -1453,6 +1581,14 @@ function pendencias(){
     if (r.p.status === "Pendente") pend.push({area:"projetos", t:`<b>Projeto pendente</b><br>${n} · aguardando início`});
     if (r.p.status === "Concluído" && r.checkPct < 1) pend.push({area:"projetos", t:`<b>Checklist incompleto</b><br>${n} · ${pct(r.checkPct)} concluído`});
   });
+  const vistos = new Set();
+  DB.orcamentos.forEach(o => { if ((o.status || "Enviado") !== "Enviado" || !o.data) return; const k = o.grupo || o.id; if (vistos.has(k)) return; vistos.add(k);
+    const c = clienteObj(o.cliente) || {}, venc = addDias(o.data, num(c.validade) || 15); if (!venc || pd(venc) >= hoje()) return;
+    const g = grupoDe(o).filter(x => (x.status || "Enviado") === "Enviado"), nomes = g.map(x => x.projeto).join(", "), rot = numBase(o) + (o.rev ? " R" + o.rev : "");
+    const msg = `Olá${c.contato ? ", " + c.contato.split(" ")[0] : ""}! Tudo bem? Gostaria de saber se você teve a oportunidade de avaliar a proposta Nº ${rot} (${nomes}). Fico à disposição para tirar dúvidas ou fazer ajustes.${c.eu ? "\n\n" + c.eu : ""}`;
+    const tel = String(c.tel || "").replace(/\D/g, "");
+    pend.push({area: "orcamentos", t: `<b>Proposta sem resposta</b><br>Nº ${esc(rot)} · ${esc(nomes)}${DB.clientes.length > 1 ? " · " + esc(c.nome || "") : ""} · validade venceu em ${dbr(venc)}`,
+      acoes: `<span class="notif-acoes">${tel ? `<a class="btn sm" target="_blank" rel="noopener" href="https://wa.me/55${tel}?text=${encodeURIComponent(msg)}">WhatsApp</a>` : ""}<a class="btn sm" target="_blank" rel="noopener" href="mailto:${encodeURIComponent(c.email || "").replace(/%40/g, "@")}?subject=${encodeURIComponent("Proposta Nº " + rot + " – " + nomes)}&body=${encodeURIComponent(msg)}">E-mail</a></span>`}); });
   const ub = ultimoBackup(), dB = ub ? diff(hoje(), new Date(new Date(ub).toDateString())) : null;
   if (pastaDevida()) pend.push({area:"banco", t: `<b>Backup na pasta do Drive pendente</b><br>Abra Banco de dados e toque em Fazer backup na pasta agora`});
   if (driveDevido()) pend.push({area:"banco", t: FORA && !gValido() ? `<b>Backup no Drive pendente</b><br>O login do Google expirou: abra Banco de dados e toque em Entrar com Google` : `<b>Backup no Drive pendente</b><br>Abra Banco de dados e toque em Fazer backup no Drive agora`});
@@ -1464,7 +1600,7 @@ function atualizarSino(){
   b.textContent = n; b.dataset.n = n; $("#sino").setAttribute("aria-label", `Notificações: ${atrasos.length} atraso(s) e ${pend.length} pendência(s)`);
 }
 function abrirNotificacoes(){
-  const {atrasos, pend} = pendencias(), item = (x, cls, rot) => `<li><span class="pill ${cls} tag">${rot}</span><a href="#${x.area}" data-fecha>${x.t}</a></li>`;
+  const {atrasos, pend} = pendencias(), item = (x, cls, rot) => `<li><span class="pill ${cls} tag">${rot}</span><a href="#${x.area}" data-fecha>${x.t}</a>${x.acoes || ""}</li>`;
   dlg("Notificações", (atrasos.length || pend.length)
     ? `<ul class="notif">${atrasos.length ? `<h4>Atrasos (${atrasos.length})</h4>` + atrasos.map(x => item(x, "p-red", "Atraso")).join("") : ""}${pend.length ? `<h4>Pendências (${pend.length})</h4>` + pend.map(x => item(x, "p-pend", "Pendência")).join("") : ""}</ul>`
     : `<p class="empty"><b>Nada pendente.</b> Nenhum atraso de entrega ou de pagamento.</p>`, "");
@@ -1514,7 +1650,7 @@ function folhaDeLinhas(linhas, larguras){
   return ws;
 }
 const telaDe = v => { const d = document.createElement("div"); d.innerHTML = V[v](); return d; };
-const textoCel = td => { const c = td.cloneNode(true); c.querySelectorAll(".muted").forEach(x => x.prepend(" · ")); return c.textContent.replace(/\s+/g, " ").trim(); };
+const textoCel = td => { const c = td.cloneNode(true); c.querySelectorAll("[data-noxl]").forEach(x => x.remove()); c.querySelectorAll(".muted").forEach(x => x.prepend(" · ")); return c.textContent.replace(/\s+/g, " ").trim(); };
 function tabelaLinhas(tb){
   const cab = [...tb.querySelectorAll("thead th")].map(th => th.textContent.trim());
   const corpo = [...tb.querySelectorAll("tbody tr")].map(tr => [...tr.children].map(td => celula(textoCel(td))));
@@ -1700,10 +1836,11 @@ V.banco = () => {
       <div class="tw"><table><thead><tr><th>Área</th><th class="n">Registros</th></tr></thead><tbody>${linha("Clientes","clientes")}${linha("Orçamentos","orcamentos")}${linha("Projetos","projetos")}${linha("Pagamentos","pagamentos")}${linha("Revisões","revisoes")}${linha("Arquivos","arquivos")}</tbody></table></div>
       ${dias == null || dias > 7 ? `<p class="note">Faça um backup: ${ub ? `o último foi há ${dias} dia(s)` : "nenhum backup feito ainda"}.</p>` : ""}</div>
     <div class="panel"><h2>Backup</h2><p class="note" style="margin:0 0 10px">Salva um arquivo com todos os dados. Você escolhe onde salvar (pasta do computador, pen drive, nuvem).</p>
-      <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn pri" id="bdBackup" type="button">Fazer backup agora (.json)</button><button class="btn" id="bdExcel" type="button">Backup em Excel (.xlsx)</button></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn pri" id="bdBackup" type="button">Fazer backup agora (.json)</button><button class="btn" id="bdExcel" type="button">Backup em Excel (.xlsx)</button><button class="btn" id="bdZip" type="button">Backup completo com arquivos (.zip)</button></div>
+      <p class="note" style="margin-top:6px">O backup completo leva também os PDFs das propostas e os anexos.</p>
       <p class="note">Se o navegador não perguntar onde salvar, ative nas configurações de download a opção "Perguntar onde salvar cada arquivo".</p>
       <h2 style="margin-top:18px">Restaurar</h2><p class="note" style="margin:0 0 10px">Substitui os dados atuais pelos de um backup.</p>
-      <div style="display:flex;gap:10px;flex-wrap:wrap"><label class="btn" for="bdIn">Restaurar backup (.json)</label><input id="bdIn" type="file" accept=".json,application/json" hidden><label class="btn" for="bdXl">Importar do Excel (.xlsx)</label><input id="bdXl" type="file" accept=".xlsx,.xls" hidden></div></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap"><label class="btn" for="bdIn">Restaurar backup (.json)</label><input id="bdIn" type="file" accept=".json,application/json" hidden><label class="btn" for="bdZipIn">Restaurar backup completo (.zip)</label><input id="bdZipIn" type="file" accept=".zip,application/zip" hidden><label class="btn" for="bdXl">Importar do Excel (.xlsx)</label><input id="bdXl" type="file" accept=".xlsx,.xls" hidden></div></div>
   </div>
   </section>
   <section ${bancoAba === "drive" ? "" : "hidden"}>
@@ -1903,10 +2040,12 @@ const fbDoc = k => fbStore.doc(`${ESPACO}/dados/${k}`);
 const dbOnline = { doc: p => { const r = fbDoc(p.split("/").pop());
   return { get: async () => { const s = await r.get(); return {exists: s.exists && !!(s.data() || {}).json, data: () => JSON.parse(s.data().json)}; },
            set: body => r.set({json: JSON.stringify(body), em: new Date().toISOString(), por: fbUser ? fbUser.email : ""}) }; } };
-const erroFb = e => ({"auth/invalid-credential": "E-mail ou senha incorretos.", "auth/wrong-password": "E-mail ou senha incorretos.", "auth/user-not-found": "E-mail ou senha incorretos.",
+const erroFb = e => { const cod = String((e && e.code) || ""); if (/referer|referrer/i.test(cod + " " + ((e && e.message) || ""))) return `O endereço deste site não está liberado na chave do Google (restrição de sites). Código: ${cod || "referer"}`;
+  return erroFbBase(e) || `Não foi possível concluir. Tente de novo. (código: ${cod || ((e && e.message) || "desconhecido")})`; };
+const erroFbBase = e => ({"auth/invalid-credential": "E-mail ou senha incorretos.", "auth/wrong-password": "E-mail ou senha incorretos.", "auth/user-not-found": "E-mail ou senha incorretos.",
   "auth/invalid-login-credentials": "E-mail ou senha incorretos.", "auth/email-already-in-use": "Este e-mail já tem conta. Use Entrar.", "auth/weak-password": "A senha precisa ter pelo menos 6 caracteres.",
   "auth/invalid-email": "E-mail inválido.", "auth/missing-email": "Digite o e-mail.", "auth/too-many-requests": "Muitas tentativas. Aguarde alguns minutos e tente de novo.",
-  "auth/network-request-failed": "Sem conexão com a internet.", "auth/user-disabled": "Este acesso foi desativado.", "permission-denied": "Acesso não liberado para este e-mail."}[e && e.code] || "Não foi possível concluir. Tente de novo.");
+  "auth/network-request-failed": "Sem conexão com a internet.", "auth/user-disabled": "Este acesso foi desativado.", "permission-denied": "Acesso não liberado para este e-mail."}[e && e.code]);
 async function entrarNoEspaco(u){
   const ref = fbStore.doc(ESPACO);
   try { const s = await ref.get(); if (s.exists) { espaco = s.data(); return true; } }
@@ -2120,6 +2259,8 @@ V.banco.bind = () => {
   $("#bdBackup").onclick = fazerBackup;
   $("#bdExcel").onclick = async () => { await exportarExcel(); };
   $("#bdIn").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) restaurarBackup(f); };
+  $("#bdZip").onclick = () => backupCompleto($("#bdZip"));
+  $("#bdZipIn").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) restaurarCompleto(f); };
   $("#bdXl").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) importarExcel(f); };
   $("#gdConectar").onclick = conectarDrive;
   $("#gdRest").onclick = restaurarDoDrive;

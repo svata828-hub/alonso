@@ -264,6 +264,7 @@ dialog::backdrop{background:rgba(5,10,20,.55)}
       <a href="#pagamentos" data-v="pagamentos"><span class="ico">$</span>Pagamentos</a>
       <a href="#revisoes" data-v="revisoes"><span class="ico">↻</span>Revisões</a>
       <a href="#arquivos" data-v="arquivos"><span class="ico">⇪</span>Arquivos</a>
+      <a href="#pdfs" data-v="pdfs"><span class="ico">▥</span>Propostas PDF</a>
       <a href="#cronograma" data-v="cronograma"><span class="ico">▤</span>Cronograma</a>
       <a href="#cobranca" data-v="cobranca"><span class="ico">!</span>Cobrança</a>
       <a href="#extrato" data-v="extrato"><span class="ico">▣</span>Extrato</a>
@@ -768,8 +769,9 @@ async function pdfDe(el, nome, o = {}){
 /* ---------- PDFs com texto (proposta, extrato e recibo) ---------- */
 const NAVY = [23, 50, 92], CINZA = [100, 100, 100], TXT = [34, 34, 34], VERM = [179, 38, 30];
 const limpa = t => String(t ?? "").replace(/\u00a0/g, " ").replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF\u2013\u2014\u2018\u2019\u201C\u201D\u2022\u2026\u20AC]/g, "");
+let ultimoPdf = null;
 async function salvarPdf(pdf, nome){
-  const blob = pdf.output("blob");
+  const blob = pdf.output("blob"); ultimoPdf = {blob, nome};
   const dl = window.claude && claude.use ? await claude.use("downloads") : null;
   if (dl) { try { await dl.save({filename: nome, data: blob}); return true; } catch (e) { if (e && e.code === "declined") return false; throw new Error("Não foi possível salvar o PDF aqui (" + (e && e.message || e) + ")."); } }
   pdf.save(nome); return true;
@@ -799,8 +801,8 @@ function docPdf(){
     det.forEach(l => o.txt(l, 9, false, CINZA, 4.3)); o.y += 2; };
   return o;
 }
-async function pdfProposta(f, n, nome){
-  const o = docPdf(), c = C(), d = o.d; o.cli = c;
+async function pdfProposta(f, n, nome, cli){
+  const o = docPdf(), c = cli || C(), d = o.d; o.cli = c;
   const dias = f.entrega && f.data ? diff(pd(f.entrega), pd(f.data)) : null;
   o.cabecalho("PROPOSTA COMERCIAL", [["Nº " + numProp(n) + (f.rev ? " R" + f.rev : ""), "nr"], ["Emitida em " + dbr(f.data)], ["Válida até " + (f.data ? dbr(addDias(f.data, num(c.validade) || 15)) : "—")]]);
   o.paraQuem("PREPARADA PARA");
@@ -863,14 +865,16 @@ async function gerarProposta(){
   try {
     const ok = await pdfProposta(f, n, `${prefixoCli(SEL)}Proposta ${rotulo} - ${nomeArq(nome)}.pdf`);
     if (!ok) { toast("PDF não salvo. A proposta continua aqui."); return; }
+    let alvo = ob;
     const dados = {data:f.data, projeto:nome, escopo:f.escopo, entregaveis:f.entregaveis, valor:num(f.valor), entrega:f.entrega, horas:num(f.horas), revInc:num(f.revInc), prazo:num(f.prazo), obs:f.obs, entregar:entregarDe(f)};
     if (ob) { const antesR = {...ob, sit: ob.status}; Object.assign(ob, dados, {rev: f.rev, status: "Enviado"}); registrar({orc: ob.id, projeto: nome}, antesR, {...ob, sit: ob.status}, {...CAMPOS_HIST_O, rev: "Revisão da proposta"}); save("orcamentos");
       if (!DB.projetos.some(q => q.orc === ob.id)) { S.projetos.push({id:uid(), orc:ob.id, cliente:SEL, projeto:nome, status:"Pendente", check:Array(8).fill(false)}); save("projetos"); } }
     else { const oid = uid(); S.orcamentos.push({id:oid, cliente:SEL, num:n, rev:0, status:"Enviado", ...dados});
       S.projetos.push({id:uid(), orc:oid, cliente:SEL, projeto:nome, status:"Pendente", check:Array(8).fill(false)});
-      save("orcamentos"); save("projetos"); }
+      save("orcamentos"); save("projetos"); alvo = S.orcamentos.find(x => x.id === oid); }
+    const guardou = alvo ? await guardarPdfSeguro(alvo) : false; if (guardou) save("orcamentos");
     FORM = novoForm(); render();
-    toast(ob ? `Revisão ${rotulo} salva e orçamento atualizado.` : `Proposta Nº ${rotulo} salva, registrada em Orçamentos e enviada para Projetos.`);
+    toast((ob ? `Revisão ${rotulo} salva e orçamento atualizado.` : `Proposta Nº ${rotulo} salva, registrada em Orçamentos e enviada para Projetos.`) + (guardou ? "" : " (Não foi possível guardar o PDF em Propostas PDF.)"));
   } catch (e) { toast(e.message || "Não foi possível gerar o PDF."); }
   finally { const b = $("#gerar"); if (b) { b.disabled = false; b.textContent = "Gerar PDF"; } }
 }
@@ -912,16 +916,17 @@ function reduzirImagem(f){
       cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height); URL.revokeObjectURL(url); ok(cv.toDataURL("image/png")); };
     img.onerror = () => falha(new Error("imagem")); img.src = url; });
 }
-function paraLixeira(k, item, nome){ DB.lixeira.push({id: uid(), k, item, nome, quando: new Date().toISOString()}); persistir("lixeira"); }
+function paraLixeira(k, item, nome, junto){ DB.lixeira.push({id: uid(), k, item, nome, quando: new Date().toISOString(), ...(junto && junto.length ? {junto} : {})}); persistir("lixeira"); }
 function apagar(k, id, nome){ if (!confirm(`Apagar ${nome}? Ele fica 30 dias na Lixeira (Banco de dados).`)) return; const it = S[k].find(x => x.id === id); if (it) paraLixeira(k, it, nome); S[k] = S[k].filter(x => x.id !== id); save(k); render(); toast("Apagado. Pode ser recuperado na Lixeira por 30 dias."); }
 async function limparLixeira(){
   const lim = Date.now() - 30 * 864e5, velhos = DB.lixeira.filter(l => new Date(l.quando).getTime() < lim);
-  if (!velhos.length) return; for (const l of velhos) if (l.k === "arquivos" && l.item.anexo) await apagarAnexo(l.item.anexo);
+  if (!velhos.length) return; for (const l of velhos) { if (l.k === "arquivos" && l.item.anexo) await apagarAnexo(l.item.anexo); if (l.k === "orcamentos" && l.item.pdf) await apagarPdf(l.item); }
   DB.lixeira = DB.lixeira.filter(l => !velhos.includes(l)); persistir("lixeira");
 }
 function recuperar(id){
   const l = DB.lixeira.find(x => x.id === id); if (!l) return;
   if (l.k === "clientes") DB.clientes.push(l.item); else DB[l.k].push(l.item);
+  (l.junto || []).forEach(j => { if (!DB[j.k].some(x => x.id === j.item.id)) DB[j.k].push(j.item); persistir(j.k); });
   DB.lixeira = DB.lixeira.filter(x => x !== l); persistir(l.k); persistir("lixeira"); render(); toast(`${l.nome} recuperado.`);
 }
 
@@ -935,8 +940,21 @@ V.orcamentos = () => {
 V.orcamentos.bind = () => document.querySelectorAll("tr[data-id]").forEach(tr => tr.onclick = () => {
   const o = S.orcamentos.find(x => x.id === tr.dataset.id);
   dlg(`Orçamento Nº ${numOrc(o)}${o.rev ? " R" + o.rev : ""}`, `<div class="form">${fs_("status","Situação",ST_ORC,o.status || "Enviado")}${f_("num",`Nº (sequência do cliente ${codCli(o.cliente)})`,o.num,"number")}${f_("data","Data",o.data,"date")}<div class="wide">${f_("projeto","Projeto",o.projeto)}</div>${f_("valor","Valor (R$)",o.valor,"number",'step="0.01"')}${f_("entrega","Data de entrega",o.entrega,"date")}${fh_("horas","Horas estimadas",o.horas)}${f_("revInc","Revisões incluídas",o.revInc,"number")}${f_("prazo","Prazo de pagamento (dias)",o.prazo,"number")}${ft_("escopo","Escopo",o.escopo)}${ft_("entregaveis","Entregáveis",o.entregaveis)}${ft_("obs","Observações",o.obs)}</div><p class="note">Mudar o nome do projeto aqui também muda o nome em Projetos, Pagamentos, Revisões e Arquivos.</p>`,
-    `<button class="btn danger" type="button" id="dDel">Apagar</button><button class="btn" type="button" id="dMail">Enviar por e-mail</button><button class="btn" type="button" id="dRev">Revisar proposta (R${(o.rev || 0) + 1})</button><button class="btn pri" type="button" id="dOk">Salvar</button>`);
-  $("#dDel").onclick = () => { $("#dlg").close(); apagar("orcamentos", o.id, "o orçamento Nº "+numOrc(o)); };
+    `<button class="btn danger" type="button" id="dDel">Apagar</button><button class="btn" type="button" id="dMail">Enviar por e-mail</button><button class="btn" type="button" id="dPdf">Gerar PDF</button><button class="btn" type="button" id="dRev">Revisar proposta (R${(o.rev || 0) + 1})</button><button class="btn pri" type="button" id="dOk">Salvar</button>`);
+  $("#dDel").onclick = () => { $("#dlg").close(); const pjs = DB.projetos.filter(q => q.orc === o.id), nome = "o orçamento Nº " + numOrc(o);
+    if (!confirm(`Apagar ${nome}${pjs.length ? " e o projeto ligado a ele" : ""}${o.pdf ? " (o PDF sai de Propostas PDF)" : ""}? Fica 30 dias na Lixeira (Banco de dados).`)) return;
+    paraLixeira("orcamentos", o, nome, pjs.map(item => ({k: "projetos", item})));
+    S.orcamentos = S.orcamentos.filter(x => x.id !== o.id); save("orcamentos");
+    if (pjs.length) { S.projetos = S.projetos.filter(q => q.orc !== o.id); save("projetos"); }
+    render(); toast("Apagado. Pode ser recuperado na Lixeira por 30 dias."); };
+  $("#dPdf").onclick = async () => { const b = $("#dPdf"), rot = numOrc(o) + (o.rev ? " R" + o.rev : ""); b.disabled = true; b.textContent = "Gerando…";
+    try { const f = {projeto: o.projeto, data: o.data || "", entrega: o.entrega || "", valor: o.valor ?? "", horas: o.horas ?? "", revInc: o.revInc ?? "", prazo: o.prazo ?? "", escopo: o.escopo || "", entregaveis: o.entregaveis || "", obs: o.obs || "", rev: o.rev || 0};
+      const ok = await pdfProposta(f, o.num, `${prefixoCli(o.cliente)}Proposta ${rot} - ${nomeArq(o.projeto)}.pdf`, clienteObj(o.cliente));
+      if (!ok) return toast("PDF não salvo.");
+      const guardou = await guardarPdfSeguro(o); if (guardou) save("orcamentos");
+      toast(guardou ? `PDF da proposta Nº ${rot} gerado de novo e atualizado em Propostas PDF.` : "PDF gerado, mas não foi possível atualizar em Propostas PDF."); }
+    catch (e) { toast(e.message || "Não foi possível gerar o PDF."); }
+    finally { b.disabled = false; b.textContent = "Gerar PDF"; } };
   $("#dMail").onclick = () => { const c = clienteObj(o.cliente), rot = numOrc(o) + (o.rev ? " R" + o.rev : "");
     abrirEmail(c.email, `Proposta Nº ${rot} – ${o.projeto}`, `Olá ${c.contato || ""}, tudo bem?\n\nSegue em anexo a proposta Nº ${rot} referente ao projeto ${o.projeto}, no valor de ${brl(o.valor)}${o.entrega ? `, com entrega prevista para ${dbr(o.entrega)}` : ""}.\n\nFico à disposição para qualquer dúvida.\n\n${c.eu || ""}`);
     toast("Anexe o PDF da proposta no e-mail antes de enviar."); };
@@ -946,7 +964,9 @@ V.orcamentos.bind = () => document.querySelectorAll("tr[data-id]").forEach(tr =>
     if (!novo) return toast("O projeto precisa de um nome.");
     if (novo !== antigo && DB.orcamentos.some(x => x.cliente === o.cliente && x.projeto === novo)) return toast("Este cliente já tem um orçamento com esse nome.");
     const antesO = {...o, sit: o.status}; o.status = v.status;
-    if (v.status === "Recusado" && stAntes !== "Recusado") { const pj = DB.projetos.find(q => q.orc === o.id); if (pj && pj.status !== "Cancelado" && confirm("Marcar também o projeto como Cancelado?")) { pj.status = "Cancelado"; persistir("projetos"); } }
+    if (v.status !== stAntes && (v.status === "Aprovado" || v.status === "Recusado")) { const pj = DB.projetos.find(q => q.orc === o.id);
+      const alvoSt = v.status === "Recusado" ? "Cancelado" : (pj && pj.status !== "Concluído" ? "Em produção" : null);
+      if (pj && alvoSt && pj.status !== alvoSt) { const antesP = {...pj}; pj.status = alvoSt; registrar(pj, antesP, pj, CAMPOS_HIST_P); persistir("projetos"); } }
     Object.assign(o, {num:num(v.num)||o.num, data:v.data, projeto:novo, valor:num(v.valor), entrega:v.entrega, horas:hmsLer(v, "horas"), revInc:num(v.revInc), prazo:num(v.prazo), escopo:v.escopo, entregaveis:v.entregaveis, obs:v.obs});
     registrar({orc: o.id, projeto: novo}, antesO, {...o, sit: o.status}, CAMPOS_HIST_O);
     if (novo !== antigo) ["projetos","pagamentos","revisoes","arquivos"].forEach(k => { S[k].forEach(x => { if (x.orc === o.id || (!x.orc && x.projeto === antigo)) x.projeto = novo; }); save(k); });
@@ -1059,6 +1079,47 @@ function editarArq(x, novo){
 }
 V.arquivos.bind = () => { const z = $("#zipA"); if (z) z.onclick = () => zipAnexos(z); $("#novoA").onclick = () => editarArq({}, true); document.querySelectorAll("tr[data-id]").forEach(tr => tr.onclick = () => editarArq(S.arquivos.find(x => x.id === tr.dataset.id)));
   document.querySelectorAll("[data-baixar]").forEach(b => b.onclick = e => { e.stopPropagation(); baixarAnexo(S.arquivos.find(x => x.id === b.dataset.baixar), b); }); };
+/* ----- Propostas PDF: guarda o último PDF gerado de cada proposta ----- */
+const idbPdf = () => new Promise((ok, falha) => { const r = indexedDB.open("cp_pdfs", 1); r.onupgradeneeded = () => r.result.createObjectStore("pdfs"); r.onsuccess = () => ok(r.result); r.onerror = () => falha(r.error); });
+async function idbOp(modo, fn){ const d = await idbPdf(); return new Promise((ok, falha) => { const t = d.transaction("pdfs", modo), q = fn(t.objectStore("pdfs")); t.oncomplete = () => ok(q && q.result); t.onerror = () => falha(t.error); }); }
+const b64DeBlob = b => new Promise((ok, falha) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1] || ""); r.onerror = () => falha(r.error); r.readAsDataURL(b); });
+const docPdfOnline = o => fbStore.doc(`${ESPACO}/dados/pdf_${o.id}`), parteOnline = (o, i) => fbStore.doc(`${ESPACO}/dados/pdf_${o.id}_${i}`); /* o PDF vai em partes (limite de 1 MB por registro online) */
+async function guardarPdf(o, blob, nome){
+  const antigo = o.pdf; let ref;
+  if (ONLINE) { const b64 = await b64DeBlob(blob), T = 900000, partes = Math.max(1, Math.ceil(b64.length / T));
+    for (let i = 0; i < partes; i++) await parteOnline(o, i).set({b64: b64.slice(i * T, (i + 1) * T)});
+    await docPdfOnline(o).set({partes, em: new Date().toISOString()});
+    for (let i = partes; i < ((antigo && antigo.partes) || 0); i++) { try { await parteOnline(o, i).delete(); } catch (e) {} }
+    ref = {tipo: "fb", partes}; }
+  else if (!FORA) { const as = window.claude && claude.use ? await claude.use("assets") : null; if (!as) throw new Error("Armazenamento de arquivos indisponível."); const r = await as.upload(blob); ref = {tipo: "asset", id: r.id, url: r.url}; }
+  else { await idbOp("readwrite", st => st.put(blob, o.id)); ref = {tipo: "idb"}; }
+  o.pdf = {nome, em: new Date().toISOString(), tamanho: blob.size, ...ref};
+  if (antigo && antigo.tipo === "asset" && antigo.id && antigo.id !== o.pdf.id) apagarAnexo(antigo);
+}
+async function guardarPdfSeguro(o){ if (!ultimoPdf) return false; try { await guardarPdf(o, ultimoPdf.blob, ultimoPdf.nome); return true; } catch (e) { return false; } }
+async function lerPdf(o){
+  const p = o && o.pdf; if (!p) return null;
+  if (p.tipo === "fb") { if (!fbStore) return null; const sn = await docPdfOnline(o).get(); if (!sn.exists) return null; const n = sn.data().partes || 0; let b64 = "";
+    for (let i = 0; i < n; i++) { const pt = await parteOnline(o, i).get(); if (!pt.exists) return null; b64 += pt.data().b64 || ""; } if (!b64) return null;
+    const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new Blob([u], {type: "application/pdf"}); }
+  if (p.tipo === "asset") { const r = await fetch(p.url); return r.ok ? new Blob([await r.blob()], {type: "application/pdf"}) : null; }
+  if (p.tipo === "idb") return (await idbOp("readonly", st => st.get(o.id))) || null;
+  return null;
+}
+async function apagarPdf(o){ const p = o && o.pdf; if (!p) return; try { if (p.tipo === "fb" && fbStore) { for (let i = 0; i < (p.partes || 1); i++) await parteOnline(o, i).delete(); await docPdfOnline(o).delete(); } else if (p.tipo === "asset") await apagarAnexo(p); else if (p.tipo === "idb") await idbOp("readwrite", st => st.delete(o.id)); } catch (e) {} }
+V.pdfs = () => {
+  const L = S.orcamentos.filter(o => o.pdf).sort((a, b) => (b.pdf.em || "").localeCompare(a.pdf.em || ""));
+  const quando = t => t ? new Date(t).toLocaleString("pt-BR", {dateStyle: "short", timeStyle: "short"}) : "—";
+  return `<div class="top"><div><h1>Propostas em PDF</h1><div class="sub">O último PDF gerado de cada proposta fica guardado aqui. Ao gerar de novo pela aba Orçamentos, o arquivo é substituído; ao apagar a proposta, ele sai daqui.</div></div></div>
+  <div class="panel">${L.length ? `<div class="tw"><table><thead><tr><th>Nº</th>${SEL === "todos" ? "<th>Cliente</th>" : ""}<th>Projeto</th><th>Arquivo</th><th>Gerado em</th><th class="n">Tamanho</th><th></th></tr></thead><tbody>${L.map(o => `<tr><td>${numOrc(o)}${o.rev ? " R" + o.rev : ""}</td>${SEL === "todos" ? `<td>${esc(clienteObj(o.cliente).nome || "")}</td>` : ""}<td>${esc(o.projeto)}</td><td>${esc(o.pdf.nome)}</td><td>${quando(o.pdf.em)}</td><td class="n">${Math.max(1, Math.round((o.pdf.tamanho || 0) / 1024)).toLocaleString("pt-BR")} KB</td><td style="text-align:right"><button class="btn sm" type="button" data-pdf="${o.id}">Baixar</button></td></tr>`).join("")}</tbody></table></div>`
+    : `<p class="empty"><b>Nenhum PDF guardado ainda.</b> Ao gerar uma proposta, ou gerar de novo pela aba <a href="#orcamentos">Orçamentos</a>, o PDF aparece aqui.</p>`}</div>`;
+};
+V.pdfs.bind = () => document.querySelectorAll("[data-pdf]").forEach(b => b.onclick = async e => { e.stopPropagation(); const o = DB.orcamentos.find(x => x.id === b.dataset.pdf); if (!o) return;
+  const txt = b.textContent; b.disabled = true; b.textContent = "Baixando…";
+  try { const blob = await lerPdf(o); if (!blob) return toast("PDF não encontrado. Gere de novo pela aba Orçamentos.");
+    const r = await salvarArquivo(o.pdf.nome, blob, {desc: "PDF", mime: "application/pdf"}); if (r === "erro") toast("Não foi possível salvar o PDF aqui."); }
+  catch (er) { toast("Não foi possível abrir o PDF guardado."); }
+  finally { b.disabled = false; b.textContent = txt; } });
 const ANEXO_EXT = ["pdf","png","jpg","jpeg","webp","gif","step","stp","iges","igs","dxf","txt","csv"];
 const ANEXO_TEXTO = ["step","stp","iges","igs","dxf"];
 async function enviarAnexo(f){

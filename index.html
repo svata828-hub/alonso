@@ -80,6 +80,10 @@ input:focus,select:focus,textarea:focus,button:focus-visible,a:focus-visible{out
 .btn.danger{color:var(--red)}
 .btn.big{background:#B3261E;border-color:#B3261E;color:#fff;font-size:17px;padding:12px 22px}
 .hms{display:flex;gap:6px}
+.ex-row{display:grid;grid-template-columns:2fr 1fr 1.6fr auto;gap:10px;align-items:end;margin:6px 0 10px;padding-bottom:10px;border-bottom:1px dashed var(--line)}
+@media (max-width:760px){.ex-row{grid-template-columns:1fr}}
+.anx-lista{list-style:none;margin:6px 0 8px;padding:0;display:flex;flex-direction:column;gap:6px}
+.anx-lista li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
 .hms-c{flex:1;display:flex;align-items:center;gap:4px;min-width:0}
 .hms-c input{width:100%;min-width:0;padding-left:8px;padding-right:6px;-moz-appearance:textfield;appearance:textfield}
 .hms-c input::-webkit-inner-spin-button,.hms-c input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
@@ -403,7 +407,14 @@ const numRecibo = x => x && x.recibo ? `${codCli(cliDoRec(x))}-R-${p3(x.recibo)}
 function proxCodigo(){ return Math.max(0, ...DB.clientes.map(c => num(c.codigo) || 0)) + 1; }
 const p3 = n => String(num(n) || 0).padStart(3, "0");
 const codCli = id => p3(clienteObj(id).codigo);
-const numOrc = o => o && o.num ? `${codCli(o.cliente)}-${p3(o.num)}` : "";
+const numOrc = o => o && o.num ? `${codCli(o.cliente)}-${p3(o.num)}${o.item ? "." + o.item : ""}` : "";
+const numBase = o => o && o.num ? `${codCli(o.cliente)}-${p3(o.num)}` : "";
+/* proposta com vários projetos: cada projeto é um orçamento com o mesmo número, ligado pelo "grupo" */
+const grupoDe = o => o && o.grupo ? DB.orcamentos.filter(x => x.grupo === o.grupo).sort((a, b) => (a.item || 0) - (b.item || 0)) : (o ? [o] : []);
+const itensDe = f => [{projeto: f.projeto, valor: f.valor, horas: f.horas}, ...(f.extras || [])];
+function fDeOrc(o){ const g = grupoDe(o), p = g[0] || o;
+  return {projeto: p.projeto, data: p.data || "", entrega: p.entrega || "", valor: p.valor ?? "", horas: p.horas ?? "", revInc: p.revInc ?? "", prazo: p.prazo ?? "", escopo: p.escopo || "", entregaveis: p.entregaveis || "", obs: p.obs || "", rev: p.rev || 0, revModo: p.revModo || "", revVal: p.revVal ?? "",
+    extras: g.slice(1).map(x => ({projeto: x.projeto, valor: x.valor ?? "", horas: x.horas ?? ""})), numRot: numBase(p)}; }
 function prefixoCli(id){ const c = clienteObj(id); return c && c.codigo ? `${p3(c.codigo)} ${nomeArq(c.nome || "Cliente")} - ` : ""; }
 function save(k){
   if (k === "cliente") k = "clientes";
@@ -700,7 +711,9 @@ V.dashboard.bind = () => {
 };
 
 /* ----- proposta ----- */
-function novoForm(){ return {revOf:null,rev:0,projeto:"",data:iso(hoje()),entrega:"",valor:"",horas:"",revInc:"",prazo:"",escopo:ESC_PADRAO,entregaveis:ENT_PADRAO,obs:"",revModo:"",revVal:""}; }
+function novoForm(){ return {revOf:null,rev:0,projeto:"",data:iso(hoje()),entrega:"",valor:"",horas:"",revInc:"",prazo:"",escopo:ESC_PADRAO,entregaveis:ENT_PADRAO,obs:"",revModo:"",revVal:"",extras:[],anexos:[]}; }
+function sugProposta(f){ const c = C(), h = itensDe(f).reduce((t, it) => t + (num(it.horas) || 0), 0); return h ? Math.round(h*(num(c.vhora)||0)/(1-(num(c.margem)||0)/100)/10)*10 : null; }
+function mostrarSug(){ const sug = sugProposta(FORM), el = $("#sug"); if (el) el.innerHTML = sug ? `Preço sugerido: <b>${brl(sug)}</b> (horas × valor-hora, com a margem desejada). Não sai no PDF.` : "Informe as horas estimadas para ver o preço sugerido."; }
 const proxNum = () => Math.max(0, ...DB.orcamentos.filter(o => o.cliente === SEL).map(o => num(o.num) || 0)) + 1;
 const numProp = n => `${codCli(SEL)}-${p3(n)}`;
 function papelProposta(f, n){
@@ -708,14 +721,14 @@ function papelProposta(f, n){
   const cid = [c.cidade, c.uf].filter(Boolean).join(" / ");
   return `<div class="paper" id="paper">
     <div class="ph"><div>${DB.config.logo ? `<img src="${DB.config.logo}" alt="Logotipo" style="max-height:52px;max-width:200px;display:block;margin-bottom:6px">` : ""}<div class="co">${ph(c.eu,"Seu nome / empresa (aba Cliente)")}</div><div class="sm">${esc(c.minhaCidade||"")}</div></div>
-      <div><div class="doc">PROPOSTA COMERCIAL</div><div class="nr">Nº ${numProp(n)}${f.rev ? " R" + f.rev : ""}</div><div class="sm" style="text-align:right">Emitida em ${dbr(f.data)}<br>Válida até ${f.data?dbr(addDias(f.data, num(c.validade)||15)):"—"}</div></div></div>
+      <div><div class="doc">PROPOSTA COMERCIAL</div><div class="nr">Nº ${f.numRot || numProp(n)}${f.rev ? " R" + f.rev : ""}</div><div class="sm" style="text-align:right">Emitida em ${dbr(f.data)}<br>Válida até ${f.data?dbr(addDias(f.data, num(c.validade)||15)):"—"}</div></div></div>
     <div class="to"><div class="k">Preparada para</div><div class="nm">${ph(c.nome,"Nome do cliente")}</div>
       <div class="sm">${c.cnpj?"CNPJ/CPF: "+esc(c.cnpj)+"<br>":""}A/C ${esc(c.contato||"—")}${c.tel?" &nbsp; Tel.: "+esc(fmtTel(c.tel)):""}${c.email?" &nbsp; "+esc(c.email):""}${c.endereco||cid?"<br>"+esc([c.endereco,cid].filter(Boolean).join(" – ")):""}</div></div>
-    <div class="sec">1. Objeto</div><p><b>${ph(f.projeto,"Nome do projeto")}</b></p>
+    <div class="sec">1. Objeto</div>${itensDe(f).map((it, i) => `<p><b>${ph(it.projeto, i ? "Nome do projeto " + (i + 1) : "Nome do projeto")}</b></p>`).join("")}
     <div class="sec">2. Escopo dos serviços</div><p>${ph(f.escopo,"Descreva o escopo do serviço")}</p>
     <div class="sec">3. Entregáveis</div><p>${ph(f.entregaveis,"—")}</p>
     <div class="sec">4. Investimento</div>
-    <table><thead><tr><th>Descrição</th><th class="c">Qtd.</th><th class="n">Valor</th></tr></thead><tbody><tr><td>${ph(f.projeto,"Projeto")}</td><td class="c">1</td><td class="n">${brl(num(f.valor)||0)}</td></tr><tr class="tot"><td></td><td class="n">Total</td><td class="n">${brl(num(f.valor)||0)}</td></tr></tbody></table>
+    <table><thead><tr><th>Descrição</th><th class="c">Qtd.</th><th class="n">Valor</th></tr></thead><tbody>${itensDe(f).map((it, i) => `<tr><td>${ph(it.projeto, "Projeto" + (i ? " " + (i + 1) : ""))}</td><td class="c">1</td><td class="n">${brl(num(it.valor)||0)}</td></tr>`).join("")}<tr class="tot"><td></td><td class="n">Total</td><td class="n">${brl(itensDe(f).reduce((t, it) => t + (num(it.valor)||0), 0))}</td></tr></tbody></table>
     <div class="sec">5. Prazo de entrega</div><p>${f.entrega ? dbr(f.entrega) + (dias != null ? ` (${dias} dias corridos a partir da aprovação)` : "") : "A combinar"}</p>
     <div class="sec">6. Condições de pagamento</div><p>${esc(c.condicao || "A combinar")}.</p>
     <p>Pagamento em até ${num(f.prazo) ?? num(c.prazo) ?? 30} dias após a entrega. Em caso de atraso: multa de ${(num(c.multa)||0).toLocaleString("pt-BR")}% e juros de ${(num(c.juros)||0).toLocaleString("pt-BR")}% ao mês sobre o saldo.</p>
@@ -728,7 +741,7 @@ function papelProposta(f, n){
 V.proposta = () => {
   if (SEL === "todos") return `<div class="top"><div><h1>Nova proposta</h1></div></div>${escolhaCliente("criar a proposta")}`;
   FORM = FORM || novoForm(); const f = FORM, c = C(), ob = f.revOf && orcPorId(f.revOf), n = ob ? ob.num : proxNum();
-  const sug = num(f.horas) ? Math.round(num(f.horas)*(num(c.vhora)||0)/(1-(num(c.margem)||0)/100)/10)*10 : null;
+  const sug = sugProposta(f);
   const inp = (k, l, t="text", extra="") => `<div class="fld"><label for="pf_${k}">${l}</label><input id="pf_${k}" data-k="${k}" type="${t}" value="${esc(f[k])}" ${extra}></div>`;
   return `<div class="top"><div><h1>Nova proposta</h1><div class="sub">Preencha à esquerda e confira a folha ao lado. Proposta do cliente ${esc(c.nome || "sem nome")}. ${ob ? `Revisão R${f.rev} da proposta Nº ${numProp(n)}: ao gerar, o orçamento é atualizado e mantém o mesmo número.` : `O número é o cadastro do cliente + a sequência dele: esta é a Nº ${numProp(n)}.`}</div></div></div>
   <div class="split">
@@ -739,14 +752,23 @@ V.proposta = () => {
       ${inp("revInc","Revisões incluídas","number",`min="0" placeholder="padrão: ${num(c.revInc)??0}"`)}${inp("prazo","Prazo de pagamento (dias)","number",`min="0" placeholder="padrão: ${num(c.prazo)??30}"`)}
       <div class="fld"><label for="pf_revModo">Revisão extra</label><select id="pf_revModo" data-k="revModo"><option value="valor"${revRegra(f, c).modo === "valor" ? " selected" : ""}>Por valor</option><option value="combinar"${revRegra(f, c).modo === "combinar" ? " selected" : ""}>A combinar</option></select></div>
       ${inp("revVal","Valor da revisão extra (R$)","number",`min="0" step="0.01" placeholder="padrão: ${num(c.revVal)??0}"`)}
+      <div class="wide"><label class="muted" style="font-size:12.5px;font-weight:600">Mais projetos nesta proposta</label>${(f.extras || []).map((x, i) => `<div class="ex-row">
+        <div class="fld"><label for="pfx_${i}_projeto">Nome do projeto ${i + 2}</label><input id="pfx_${i}_projeto" data-ex="${i}" data-campo="projeto" value="${esc(x.projeto || "")}"></div>
+        <div class="fld"><label for="pfx_${i}_valor">Valor (R$)</label><input id="pfx_${i}_valor" data-ex="${i}" data-campo="valor" type="number" min="0" step="0.01" value="${esc(x.valor ?? "")}"></div>
+        <div class="fld"><label for="pfx_${i}_h">Horas estimadas</label><div class="hms">${[["h","h",hmsPartes(x.horas).h,""],["m","min",hmsPartes(x.horas).m,'max="59"'],["s","s",hmsPartes(x.horas).s,'max="59"']].map(([k,u,v,mx]) => `<span class="hms-c"><input id="pfx_${i}_${k}" data-ex="${i}" data-campo="${k}" type="number" min="0" ${mx} step="1" inputmode="numeric" value="${v ?? ""}" placeholder="0" aria-label="Horas estimadas do projeto ${i + 2}: ${u}"><small>${u}</small></span>`).join("")}</div></div>
+        <button class="btn danger sm" type="button" data-exdel="${i}" aria-label="Remover projeto ${i + 2}">Remover</button></div>`).join("")}
+        <button class="btn" type="button" id="pfAddProj">+ Adicionar projeto</button></div>
       <div class="fld wide"><label for="pf_escopo">Escopo do serviço</label><textarea id="pf_escopo" data-k="escopo" rows="4">${esc(f.escopo)}</textarea></div>
       <div class="fld wide"><label for="pf_entregaveis">Entregáveis</label><textarea id="pf_entregaveis" data-k="entregaveis" rows="2">${esc(f.entregaveis)}</textarea></div>
       <div class="fld wide"><label for="pf_obs">Observações</label><textarea id="pf_obs" data-k="obs" rows="2">${esc(f.obs)}</textarea></div>
       <div class="fld wide"><label>Checklist de entrega <span class="note" style="font-weight:400">(controle interno: não sai no PDF)</span></label><div class="checks">${CHECK.map((c, i) => `<label><input type="checkbox" data-ck="${i}" ${entregarDe(f)[i] ? "checked" : ""}> ${c}</label>`).join("")}</div></div>
+      <div class="fld wide"><label>Anexos do cliente <span class="note" style="font-weight:400">(documento, foto ou PDF que o cliente passou: não saem no PDF)</span></label>
+        ${(f.anexos || []).length ? `<ul class="anx-lista">${f.anexos.map(a => `<li><span>📎 ${esc(a.nome)} <span class="note">(${tamTxt(a.tamanho)})</span></span><span><button class="btn sm" type="button" data-anx="${a.id}">Baixar</button> <button class="btn sm danger" type="button" data-anxdel="${a.id}">Remover</button></span></li>`).join("")}</ul>` : `<p class="note" style="margin:0 0 6px">Nenhum anexo.</p>`}
+        <div><label class="btn" for="pfAnexoIn" id="pfAnexoBtn">Anexar arquivo</label><input id="pfAnexoIn" type="file" multiple hidden accept="${ANX_ACCEPT}"></div></div>
     </div>
     <p class="note" id="sug">${sug ? `Preço sugerido: <b>${brl(sug)}</b> (horas × valor-hora, com a margem desejada). Não sai no PDF.` : "Informe as horas estimadas para ver o preço sugerido."}</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px"><button class="btn big" id="gerar" type="button">Gerar PDF</button><button class="btn" id="limpar" type="button">Limpar</button></div>
-    <p class="note">Gerar PDF salva o arquivo (você confirma onde), registra a proposta em Orçamentos, envia o projeto para Projetos e deixa o formulário pronto para a Nº ${numProp(n+1)}.</p>
+    <p class="note">Gerar PDF salva o arquivo (você confirma onde), registra a proposta em Orçamentos, envia cada projeto para Projetos e deixa o formulário pronto para a Nº ${numProp(n+1)}.</p>
     </div>
     <div class="paperwrap" id="pw">${papelProposta(f, n)}</div>
   </div>`;
@@ -755,13 +777,22 @@ V.proposta.bind = () => {
   if (SEL === "todos") return ligarEscolha();
   $("#pform").addEventListener("change", e => { if (e.target.dataset.k === "revModo") { FORM.revModo = e.target.value; $("#pw").innerHTML = papelProposta(FORM, proxNum()); return; } const ck = e.target.dataset.ck; if (ck == null) return; FORM.entregar = entregarDe(FORM); FORM.entregar[+ck] = e.target.checked; });
   $("#pform").addEventListener("input", e => { if (e.target.dataset.hms) { const g = x => $("#pf_horas_" + x).value, hv = hmsLer({horas__h: g("h"), horas__m: g("m"), horas__s: g("s")}, "horas"); FORM.horas = hv == null ? "" : hv;
-      const c = C(), sug = num(FORM.horas) ? Math.round(num(FORM.horas)*(num(c.vhora)||0)/(1-(num(c.margem)||0)/100)/10)*10 : null;
-      $("#sug").innerHTML = sug ? `Preço sugerido: <b>${brl(sug)}</b> (horas × valor-hora, com a margem desejada). Não sai no PDF.` : "Informe as horas estimadas para ver o preço sugerido."; return; }
+      mostrarSug(); return; }
+    if (e.target.dataset.ex != null) { const i = +e.target.dataset.ex, x = FORM.extras[i], cp = e.target.dataset.campo;
+      if (cp === "projeto" || cp === "valor") x[cp] = e.target.value;
+      else { const g = k => $(`#pfx_${i}_${k}`).value, hv = hmsLer({h__h: g("h"), h__m: g("m"), h__s: g("s")}, "h"); x.horas = hv == null ? "" : hv; }
+      $("#pw").innerHTML = papelProposta(FORM, proxNum()); mostrarSug(); return; }
     const k = e.target.dataset.k; if (!k) return; FORM[k] = e.target.value;
     $("#pw").innerHTML = papelProposta(FORM, proxNum());
-    if (k === "horas") { const c = C(), sug = num(FORM.horas) ? Math.round(num(FORM.horas)*(num(c.vhora)||0)/(1-(num(c.margem)||0)/100)/10)*10 : null;
-      $("#sug").innerHTML = sug ? `Preço sugerido: <b>${brl(sug)}</b> (horas × valor-hora, com a margem desejada). Não sai no PDF.` : "Informe as horas estimadas para ver o preço sugerido."; } });
-  $("#limpar").onclick = () => { FORM = novoForm(); render(); };
+    if (k === "horas") mostrarSug(); });
+  $("#limpar").onclick = () => { (FORM.anexos || []).forEach(a => { if (!anexoEmUso(a)) apagarAnexoProp(a); }); FORM = novoForm(); render(); };
+  $("#pfAddProj").onclick = () => { FORM.extras = [...(FORM.extras || []), {projeto: "", valor: "", horas: ""}]; render(); const n = FORM.extras.length - 1, el = $(`#pfx_${n}_projeto`); if (el) el.focus(); };
+  document.querySelectorAll("[data-exdel]").forEach(b => b.onclick = () => { FORM.extras.splice(+b.dataset.exdel, 1); render(); });
+  $("#pfAnexoIn").onchange = async e => { const fs = [...e.target.files]; e.target.value = ""; if (!fs.length) return; const bt = $("#pfAnexoBtn"); bt.textContent = "Enviando…";
+    let ok = 0; for (const f of fs) { try { const a = await guardarAnexoProp(f); FORM.anexos = [...(FORM.anexos || []), a]; ok++; } catch (er) { toast(`${f.name}: ${er.message || "não foi possível anexar."}`); } }
+    render(); if (ok) toast(`${ok} anexo(s) adicionado(s).`); };
+  document.querySelectorAll("[data-anx]").forEach(b => b.onclick = () => baixarAnexoProp((FORM.anexos || []).find(a => a.id === b.dataset.anx), b));
+  document.querySelectorAll("[data-anxdel]").forEach(b => b.onclick = () => { const a = (FORM.anexos || []).find(x => x.id === b.dataset.anxdel); FORM.anexos = FORM.anexos.filter(x => x !== a); if (a && !anexoEmUso(a)) apagarAnexoProp(a); render(); });
   $("#gerar").onclick = gerarProposta;
 };
 async function pdfDe(el, nome, o = {}){
@@ -813,13 +844,13 @@ function docPdf(){
 async function pdfProposta(f, n, nome, cli){
   const o = docPdf(), c = cli || C(), d = o.d; o.cli = c;
   const dias = f.entrega && f.data ? diff(pd(f.entrega), pd(f.data)) : null;
-  o.cabecalho("PROPOSTA COMERCIAL", [["Nº " + numProp(n) + (f.rev ? " R" + f.rev : ""), "nr"], ["Emitida em " + dbr(f.data)], ["Válida até " + (f.data ? dbr(addDias(f.data, num(c.validade) || 15)) : "—")]]);
+  o.cabecalho("PROPOSTA COMERCIAL", [["Nº " + (f.numRot || numProp(n)) + (f.rev ? " R" + f.rev : ""), "nr"], ["Emitida em " + dbr(f.data)], ["Válida até " + (f.data ? dbr(addDias(f.data, num(c.validade) || 15)) : "—")]]);
   o.paraQuem("PREPARADA PARA");
-  o.barra("1. OBJETO"); o.txt(f.projeto, 11, true);
+  o.barra("1. OBJETO"); itensDe(f).forEach(it => o.txt(it.projeto, 11, true));
   o.barra("2. ESCOPO DOS SERVIÇOS"); o.txt(f.escopo || "—");
   o.barra("3. ENTREGÁVEIS"); o.txt(f.entregaveis || "—");
   o.barra("4. INVESTIMENTO");
-  o.tabela({head: [["Descrição", "Qtd.", "Valor"]], body: [[limpa(f.projeto), "1", brl(num(f.valor) || 0)]], foot: [["", "Total", brl(num(f.valor) || 0)]],
+  o.tabela({head: [["Descrição", "Qtd.", "Valor"]], body: itensDe(f).map(it => [limpa(it.projeto), "1", brl(num(it.valor) || 0)]), foot: [["", "Total", brl(itensDe(f).reduce((t, it) => t + (num(it.valor) || 0), 0))]],
     footStyles: {textColor: NAVY, fontStyle: "bold", fontSize: 11}, columnStyles: {1: {halign: "center", cellWidth: 18}, 2: {halign: "right", cellWidth: 40}},
     didParseCell: h => { if (h.column.index === 2) h.cell.styles.halign = "right"; if (h.column.index === 1 && h.section !== "foot") h.cell.styles.halign = "center"; if (h.column.index === 1 && h.section === "foot") h.cell.styles.halign = "right"; }});
   o.barra("5. PRAZO DE ENTREGA"); o.txt(f.entrega ? dbr(f.entrega) + (dias != null ? ` (${dias} dias corridos a partir da aprovação)` : "") : "A combinar");
@@ -866,24 +897,36 @@ async function pdfRecibo(x, nome){
   return salvarPdf(d, nome);
 }
 async function gerarProposta(){
-  const f = FORM, nome = f.projeto.trim(), ob = f.revOf && orcPorId(f.revOf);
-  if (!nome) return toast("Preencha o nome do projeto.");
-  if (!(num(f.valor) > 0)) return toast("Preencha o valor da proposta.");
-  if (DB.orcamentos.some(o => o.cliente === SEL && o.projeto === nome && (!ob || o.id !== ob.id))) return toast("Este cliente já tem uma proposta com esse nome de projeto. Use outro nome.");
-  const n = ob ? ob.num : proxNum(), rotulo = numProp(n) + (ob ? " R" + f.rev : ""), btn = $("#gerar"); btn.disabled = true; btn.textContent = "Gerando…";
+  const f = FORM, ob = f.revOf && orcPorId(f.revOf), velhos = ob ? grupoDe(ob) : [];
+  const itens = itensDe(f).map(it => ({projeto: String(it.projeto || "").trim(), valor: num(it.valor), horas: num(it.horas)}));
+  if (itens.some(it => !it.projeto)) return toast(itens.length > 1 ? "Preencha o nome de todos os projetos." : "Preencha o nome do projeto.");
+  if (itens.some(it => !(it.valor > 0))) return toast(itens.length > 1 ? "Preencha o valor de todos os projetos." : "Preencha o valor da proposta.");
+  if (new Set(itens.map(it => it.projeto)).size !== itens.length) return toast("Dois projetos da proposta estão com o mesmo nome.");
+  if (DB.orcamentos.some(o => o.cliente === SEL && itens.some(it => it.projeto === o.projeto) && !velhos.includes(o))) return toast("Este cliente já tem uma proposta com esse nome de projeto. Use outro nome.");
+  const sobram = velhos.slice(itens.length);
+  if (sobram.length && !confirm(`${sobram.length} projeto(s) saíram desta revisão (${sobram.map(x => x.projeto).join(", ")}). O orçamento e o projeto deles vão para a Lixeira. Continuar?`)) return;
+  const n = ob ? ob.num : proxNum(), base = ob ? numBase(ob) : numProp(n), rotulo = base + (ob ? " R" + f.rev : ""), btn = $("#gerar"); btn.disabled = true; btn.textContent = "Gerando…";
   try {
-    const ok = await pdfProposta(f, n, `${prefixoCli(SEL)}Proposta ${rotulo} - ${nomeArq(nome)}.pdf`);
+    const ok = await pdfProposta({...f, numRot: base}, n, `${prefixoCli(SEL)}Proposta ${rotulo} - ${nomeArq(itens.map(it => it.projeto).join(" + ")).slice(0, 120)}.pdf`);
     if (!ok) { toast("PDF não salvo. A proposta continua aqui."); return; }
-    let alvo = ob;
-    const dados = {data:f.data, projeto:nome, escopo:f.escopo, entregaveis:f.entregaveis, valor:num(f.valor), entrega:f.entrega, horas:num(f.horas), revInc:num(f.revInc), prazo:num(f.prazo), obs:f.obs, entregar:entregarDe(f), revModo:f.revModo || "", revVal:num(f.revVal)};
-    if (ob) { const antesR = {...ob, sit: ob.status}; Object.assign(ob, dados, {rev: f.rev, status: "Enviado"}); registrar({orc: ob.id, projeto: nome}, antesR, {...ob, sit: ob.status}, {...CAMPOS_HIST_O, rev: "Revisão da proposta"}); save("orcamentos");
-      if (!DB.projetos.some(q => q.orc === ob.id)) { S.projetos.push({id:uid(), orc:ob.id, cliente:SEL, projeto:nome, status:"Pendente", check:Array(8).fill(false)}); save("projetos"); } }
-    else { const oid = uid(); S.orcamentos.push({id:oid, cliente:SEL, num:n, rev:0, status:"Enviado", ...dados});
-      S.projetos.push({id:uid(), orc:oid, cliente:SEL, projeto:nome, status:"Pendente", check:Array(8).fill(false)});
-      save("orcamentos"); save("projetos"); alvo = S.orcamentos.find(x => x.id === oid); }
-    const guardou = alvo ? await guardarPdfSeguro(alvo) : false; if (guardou) save("orcamentos");
+    const comum = {data:f.data, escopo:f.escopo, entregaveis:f.entregaveis, entrega:f.entrega, revInc:num(f.revInc), prazo:num(f.prazo), obs:f.obs, entregar:entregarDe(f), revModo:f.revModo || "", revVal:num(f.revVal), anexos:[...(f.anexos || [])]};
+    const grupo = itens.length > 1 ? ((velhos.find(x => x.grupo) || {}).grupo || uid()) : (velhos[0] && velhos[0].grupo) || undefined;
+    const novos = [];
+    itens.forEach((it, i) => { const marca = itens.length > 1 ? {grupo, item: i + 1} : {};
+      const o = velhos[i];
+      if (o) { const antesR = {...o, sit: o.status}; Object.assign(o, comum, {projeto: it.projeto, valor: it.valor, horas: it.horas, rev: f.rev, status: "Enviado"}, marca); if (itens.length === 1) delete o.item; if (grupo && !o.grupo) o.grupo = grupo;
+        registrar({orc: o.id, projeto: it.projeto}, antesR, {...o, sit: o.status}, {...CAMPOS_HIST_O, rev: "Revisão da proposta"});
+        const pj = DB.projetos.find(q => q.orc === o.id); if (pj && pj.projeto !== it.projeto) pj.projeto = it.projeto;
+        if (!pj) S.projetos.push({id:uid(), orc:o.id, cliente:SEL, projeto:it.projeto, status:"Pendente", check:Array(8).fill(false)}); novos.push(o); }
+      else { const oid = uid(), no = {id:oid, cliente:SEL, num:n, rev: ob ? f.rev : 0, status:"Enviado", ...comum, projeto: it.projeto, valor: it.valor, horas: it.horas, ...marca}; S.orcamentos.push(no);
+        S.projetos.push({id:uid(), orc:oid, cliente:SEL, projeto:it.projeto, status:"Pendente", check:Array(8).fill(false)}); novos.push(no); } });
+    sobram.forEach(o => { const pjs = DB.projetos.filter(q => q.orc === o.id); if (o.pdf) delete o.pdf; paraLixeira("orcamentos", o, "o orçamento Nº " + numOrc(o), pjs.map(item => ({k: "projetos", item})));
+      S.orcamentos = S.orcamentos.filter(x => x !== o); S.projetos = S.projetos.filter(q => q.orc !== o.id); });
+    novos.slice(1).forEach(o => { if (o.pdf) delete o.pdf; });
+    save("orcamentos"); save("projetos");
+    const alvo = novos[0], guardou = alvo ? await guardarPdfSeguro(alvo) : false; if (guardou) save("orcamentos");
     FORM = novoForm(); render();
-    toast((ob ? `Revisão ${rotulo} salva e orçamento atualizado.` : `Proposta Nº ${rotulo} salva, registrada em Orçamentos e enviada para Projetos.`) + (guardou ? "" : " (Não foi possível guardar o PDF em Propostas PDF.)"));
+    toast((ob ? `Revisão ${rotulo} salva e orçamento atualizado.` : `Proposta Nº ${rotulo} salva, registrada em Orçamentos e enviada para Projetos${itens.length > 1 ? ` (${itens.length} projetos)` : ""}.`) + (guardou ? "" : " (Não foi possível guardar o PDF em Propostas PDF.)"));
   } catch (e) { toast(e.message || "Não foi possível gerar o PDF."); }
   finally { const b = $("#gerar"); if (b) { b.disabled = false; b.textContent = "Gerar PDF"; } }
 }
@@ -930,6 +973,8 @@ function apagar(k, id, nome){ if (!confirm(`Apagar ${nome}? Ele fica 30 dias na 
 async function limparLixeira(){
   const lim = Date.now() - 30 * 864e5, velhos = DB.lixeira.filter(l => new Date(l.quando).getTime() < lim);
   if (!velhos.length) return; for (const l of velhos) { if (l.k === "arquivos" && l.item.anexo) await apagarAnexo(l.item.anexo); if (l.k === "orcamentos" && l.item.pdf) await apagarPdf(l.item); }
+  const restantes = DB.lixeira.filter(l => !velhos.includes(l));
+  for (const l of velhos) if (l.k === "orcamentos") for (const a of (l.item.anexos || [])) if (!DB.orcamentos.some(o => (o.anexos || []).some(x => x.id === a.id)) && !restantes.some(r => r.k === "orcamentos" && (r.item.anexos || []).some(x => x.id === a.id))) await apagarAnexoProp(a);
   DB.lixeira = DB.lixeira.filter(l => !velhos.includes(l)); persistir("lixeira");
 }
 function recuperar(id){
@@ -948,19 +993,21 @@ V.orcamentos = () => {
 };
 V.orcamentos.bind = () => document.querySelectorAll("tr[data-id]").forEach(tr => tr.onclick = () => {
   const o = S.orcamentos.find(x => x.id === tr.dataset.id);
-  dlg(`Orçamento Nº ${numOrc(o)}${o.rev ? " R" + o.rev : ""}`, `<div class="form">${fs_("status","Situação",ST_ORC,o.status || "Enviado")}${f_("num",`Nº (sequência do cliente ${codCli(o.cliente)})`,o.num,"number")}${f_("data","Data",o.data,"date")}<div class="wide">${f_("projeto","Projeto",o.projeto)}</div>${f_("valor","Valor (R$)",o.valor,"number",'step="0.01"')}${f_("entrega","Data de entrega",o.entrega,"date")}${fh_("horas","Horas estimadas",o.horas)}${f_("revInc","Revisões incluídas",o.revInc,"number")}${f_("prazo","Prazo de pagamento (dias)",o.prazo,"number")}${ft_("escopo","Escopo",o.escopo)}${ft_("entregaveis","Entregáveis",o.entregaveis)}${ft_("obs","Observações",o.obs)}</div><p class="note">Mudar o nome do projeto aqui também muda o nome em Projetos, Pagamentos, Revisões e Arquivos.</p>`,
+  dlg(`Orçamento Nº ${numOrc(o)}${o.rev ? " R" + o.rev : ""}`, `<div class="form">${fs_("status","Situação",ST_ORC,o.status || "Enviado")}${f_("num",`Nº (sequência do cliente ${codCli(o.cliente)})`,o.num,"number")}${f_("data","Data",o.data,"date")}<div class="wide">${f_("projeto","Projeto",o.projeto)}</div>${f_("valor","Valor (R$)",o.valor,"number",'step="0.01"')}${f_("entrega","Data de entrega",o.entrega,"date")}${fh_("horas","Horas estimadas",o.horas)}${f_("revInc","Revisões incluídas",o.revInc,"number")}${f_("prazo","Prazo de pagamento (dias)",o.prazo,"number")}${ft_("escopo","Escopo",o.escopo)}${ft_("entregaveis","Entregáveis",o.entregaveis)}${ft_("obs","Observações",o.obs)}</div>${grupoDe(o).length > 1 ? `<p class="note">Esta proposta tem ${grupoDe(o).length} projetos: ${grupoDe(o).map(x => esc(numOrc(x) + " " + x.projeto)).join(" · ")}.</p>` : ""}${(o.anexos || []).length ? `<div style="margin-top:10px"><label class="muted" style="font-size:12.5px;font-weight:600">Anexos do cliente</label><ul class="anx-lista">${o.anexos.map(a => `<li><span>📎 ${esc(a.nome)} <span class="note">(${tamTxt(a.tamanho)})</span></span><button class="btn sm" type="button" data-oanx="${a.id}">Baixar</button></li>`).join("")}</ul><p class="note" style="margin:0">Para trocar os anexos, use Revisar proposta.</p></div>` : ""}<p class="note">Mudar o nome do projeto aqui também muda o nome em Projetos, Pagamentos, Revisões e Arquivos.</p>`,
     `<button class="btn danger" type="button" id="dDel">Apagar</button><button class="btn" type="button" id="dMail">Enviar por e-mail</button><button class="btn" type="button" id="dPdf">Gerar PDF</button><button class="btn" type="button" id="dRev">Revisar proposta (R${(o.rev || 0) + 1})</button><button class="btn pri" type="button" id="dOk">Salvar</button>`);
   $("#dDel").onclick = () => { $("#dlg").close(); const pjs = DB.projetos.filter(q => q.orc === o.id), nome = "o orçamento Nº " + numOrc(o);
     if (!confirm(`Apagar ${nome}${pjs.length ? " e o projeto ligado a ele" : ""}${o.pdf ? " (o PDF sai de Propostas PDF)" : ""}? Fica 30 dias na Lixeira (Banco de dados).`)) return;
+    const irmaos = grupoDe(o).filter(x => x !== o); if (o.pdf && irmaos.length) { irmaos[0].pdf = o.pdf; delete o.pdf; }
     paraLixeira("orcamentos", o, nome, pjs.map(item => ({k: "projetos", item})));
     S.orcamentos = S.orcamentos.filter(x => x.id !== o.id); save("orcamentos");
     if (pjs.length) { S.projetos = S.projetos.filter(q => q.orc !== o.id); save("projetos"); }
     render(); toast("Apagado. Pode ser recuperado na Lixeira por 30 dias."); };
-  $("#dPdf").onclick = async () => { const b = $("#dPdf"), rot = numOrc(o) + (o.rev ? " R" + o.rev : ""); b.disabled = true; b.textContent = "Gerando…";
-    try { const f = {projeto: o.projeto, data: o.data || "", entrega: o.entrega || "", valor: o.valor ?? "", horas: o.horas ?? "", revInc: o.revInc ?? "", prazo: o.prazo ?? "", escopo: o.escopo || "", entregaveis: o.entregaveis || "", obs: o.obs || "", rev: o.rev || 0, revModo: o.revModo || "", revVal: o.revVal ?? ""};
-      const ok = await pdfProposta(f, o.num, `${prefixoCli(o.cliente)}Proposta ${rot} - ${nomeArq(o.projeto)}.pdf`, clienteObj(o.cliente));
+  document.querySelectorAll("[data-oanx]").forEach(b => b.onclick = () => baixarAnexoProp((o.anexos || []).find(a => a.id === b.dataset.oanx), b));
+  $("#dPdf").onclick = async () => { const b = $("#dPdf"), g = grupoDe(o), p0 = g[0], rot = numBase(o) + (p0.rev ? " R" + p0.rev : ""); b.disabled = true; b.textContent = "Gerando…";
+    try { const f = fDeOrc(o);
+      const ok = await pdfProposta(f, o.num, `${prefixoCli(o.cliente)}Proposta ${rot} - ${nomeArq(g.map(x => x.projeto).join(" + ")).slice(0, 120)}.pdf`, clienteObj(o.cliente));
       if (!ok) return toast("PDF não salvo.");
-      const guardou = await guardarPdfSeguro(o); if (guardou) save("orcamentos");
+      g.slice(1).forEach(x => { if (x.pdf) delete x.pdf; }); const guardou = await guardarPdfSeguro(p0); if (guardou) save("orcamentos");
       toast(guardou ? `PDF da proposta Nº ${rot} gerado de novo e atualizado em Propostas PDF.` : "PDF gerado, mas não foi possível atualizar em Propostas PDF."); }
     catch (e) { toast(e.message || "Não foi possível gerar o PDF."); }
     finally { b.disabled = false; b.textContent = "Gerar PDF"; } };
@@ -968,7 +1015,9 @@ V.orcamentos.bind = () => document.querySelectorAll("tr[data-id]").forEach(tr =>
     abrirEmail(c.email, `Proposta Nº ${rot} – ${o.projeto}`, `Olá ${c.contato || ""}, tudo bem?\n\nSegue em anexo a proposta Nº ${rot} referente ao projeto ${o.projeto}, no valor de ${brl(o.valor)}${o.entrega ? `, com entrega prevista para ${dbr(o.entrega)}` : ""}.\n\nFico à disposição para qualquer dúvida.\n\n${c.eu || ""}`);
     toast("Anexe o PDF da proposta no e-mail antes de enviar."); };
   $("#dRev").onclick = () => { $("#dlg").close(); if (SEL !== o.cliente) { SEL = o.cliente; try { localStorage.setItem("cp_sel", SEL); } catch (e) {} }
-    FORM = {revOf: o.id, rev: (o.rev || 0) + 1, projeto: o.projeto, data: iso(hoje()), entrega: o.entrega || "", valor: o.valor ?? "", horas: o.horas ?? "", revInc: o.revInc ?? "", prazo: o.prazo ?? "", escopo: o.escopo || "", entregaveis: o.entregaveis || ENT_PADRAO, obs: o.obs || "", entregar: entregarDe(o), revModo: o.revModo || "", revVal: o.revVal ?? ""}; ir("proposta"); };
+    const g = grupoDe(o), p0 = g[0];
+    FORM = {revOf: p0.id, rev: (p0.rev || 0) + 1, projeto: p0.projeto, data: iso(hoje()), entrega: p0.entrega || "", valor: p0.valor ?? "", horas: p0.horas ?? "", revInc: p0.revInc ?? "", prazo: p0.prazo ?? "", escopo: p0.escopo || "", entregaveis: p0.entregaveis || ENT_PADRAO, obs: p0.obs || "", entregar: entregarDe(p0), revModo: p0.revModo || "", revVal: p0.revVal ?? "",
+      extras: g.slice(1).map(x => ({projeto: x.projeto, valor: x.valor ?? "", horas: x.horas ?? ""})), anexos: [...(p0.anexos || [])]}; ir("proposta"); };
   $("#dOk").onclick = () => { const v = lerForm(), antigo = o.projeto, novo = v.projeto.trim(), stAntes = o.status;
     if (!novo) return toast("O projeto precisa de um nome.");
     if (novo !== antigo && DB.orcamentos.some(x => x.cliente === o.cliente && x.projeto === novo)) return toast("Este cliente já tem um orçamento com esse nome.");
@@ -1103,11 +1152,11 @@ async function atualizarRegistrados(){
     if (mud) renderQuandoLivreSeguro();
   }
   if (pdfsAntigosFeito || !window.jspdf) return; pdfsAntigosFeito = true;
-  const faltam = DB.orcamentos.filter(o => !o.pdf && clienteObj(o.cliente)); let n = 0;
+  const faltam = DB.orcamentos.filter(o => !o.pdf && clienteObj(o.cliente) && grupoDe(o)[0] === o && !grupoDe(o).some(x => x.pdf)); let n = 0;
   for (const o of faltam) {
-    try { const rot = numOrc(o) + (o.rev ? " R" + o.rev : ""); pdfSoGuardar = true;
-      const f = {projeto: o.projeto, data: o.data || "", entrega: o.entrega || "", valor: o.valor ?? "", horas: o.horas ?? "", revInc: o.revInc ?? "", prazo: o.prazo ?? "", escopo: o.escopo || "", entregaveis: o.entregaveis || "", obs: o.obs || "", rev: o.rev || 0, revModo: o.revModo || "", revVal: o.revVal ?? ""};
-      await pdfProposta(f, o.num, `${prefixoCli(o.cliente)}Proposta ${rot} - ${nomeArq(o.projeto)}.pdf`, clienteObj(o.cliente));
+    try { const rot = numBase(o) + (o.rev ? " R" + o.rev : ""); pdfSoGuardar = true;
+      const f = fDeOrc(o);
+      await pdfProposta(f, o.num, `${prefixoCli(o.cliente)}Proposta ${rot} - ${nomeArq(grupoDe(o).map(x => x.projeto).join(" + ")).slice(0, 120)}.pdf`, clienteObj(o.cliente));
       pdfSoGuardar = false; if (!o.pdf && DB.orcamentos.includes(o) && await guardarPdfSeguro(o)) n++; }
     catch (e) {} finally { pdfSoGuardar = false; }
   }
@@ -1118,7 +1167,7 @@ function renderQuandoLivreSeguro(){ const a = document.activeElement; if ($("#dl
 const idbPdf = () => new Promise((ok, falha) => { const r = indexedDB.open("cp_pdfs", 1); r.onupgradeneeded = () => r.result.createObjectStore("pdfs"); r.onsuccess = () => ok(r.result); r.onerror = () => falha(r.error); });
 async function idbOp(modo, fn){ const d = await idbPdf(); return new Promise((ok, falha) => { const t = d.transaction("pdfs", modo), q = fn(t.objectStore("pdfs")); t.oncomplete = () => ok(q && q.result); t.onerror = () => falha(t.error); }); }
 const b64DeBlob = b => new Promise((ok, falha) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1] || ""); r.onerror = () => falha(r.error); r.readAsDataURL(b); });
-const docPdfOnline = o => fbStore.doc(`${ESPACO}/dados/pdf_${o.id}`), parteOnline = (o, i) => fbStore.doc(`${ESPACO}/dados/pdf_${o.id}_${i}`); /* o PDF vai em partes (limite de 1 MB por registro online) */
+const chavePdf = o => o.grupo || o.id, docPdfOnline = o => fbStore.doc(`${ESPACO}/dados/pdf_${chavePdf(o)}`), parteOnline = (o, i) => fbStore.doc(`${ESPACO}/dados/pdf_${chavePdf(o)}_${i}`); /* o PDF vai em partes (limite de 1 MB por registro online) */
 async function guardarPdf(o, blob, nome){
   const antigo = o.pdf; let ref;
   if (ONLINE) { const b64 = await b64DeBlob(blob), T = 900000, partes = Math.max(1, Math.ceil(b64.length / T));
@@ -1127,7 +1176,7 @@ async function guardarPdf(o, blob, nome){
     for (let i = partes; i < ((antigo && antigo.partes) || 0); i++) { try { await parteOnline(o, i).delete(); } catch (e) {} }
     ref = {tipo: "fb", partes}; }
   else if (!FORA) { const as = window.claude && claude.use ? await claude.use("assets") : null; if (!as) throw new Error("Armazenamento de arquivos indisponível."); const r = await as.upload(blob); ref = {tipo: "asset", id: r.id, url: r.url}; }
-  else { await idbOp("readwrite", st => st.put(blob, o.id)); ref = {tipo: "idb"}; }
+  else { await idbOp("readwrite", st => st.put(blob, chavePdf(o))); ref = {tipo: "idb"}; }
   o.pdf = {nome, em: new Date().toISOString(), tamanho: blob.size, ...ref};
   if (antigo && antigo.tipo === "asset" && antigo.id && antigo.id !== o.pdf.id) apagarAnexo(antigo);
 }
@@ -1138,15 +1187,42 @@ async function lerPdf(o){
     for (let i = 0; i < n; i++) { const pt = await parteOnline(o, i).get(); if (!pt.exists) return null; b64 += pt.data().b64 || ""; } if (!b64) return null;
     const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new Blob([u], {type: "application/pdf"}); }
   if (p.tipo === "asset") { const r = await fetch(p.url); return r.ok ? new Blob([await r.blob()], {type: "application/pdf"}) : null; }
-  if (p.tipo === "idb") return (await idbOp("readonly", st => st.get(o.id))) || null;
+  if (p.tipo === "idb") return (await idbOp("readonly", st => st.get(chavePdf(o)))) || null;
   return null;
 }
-async function apagarPdf(o){ const p = o && o.pdf; if (!p) return; try { if (p.tipo === "fb" && fbStore) { for (let i = 0; i < (p.partes || 1); i++) await parteOnline(o, i).delete(); await docPdfOnline(o).delete(); } else if (p.tipo === "asset") await apagarAnexo(p); else if (p.tipo === "idb") await idbOp("readwrite", st => st.delete(o.id)); } catch (e) {} }
+async function apagarPdf(o){ const p = o && o.pdf; if (!p) return; try { if (p.tipo === "fb" && fbStore) { for (let i = 0; i < (p.partes || 1); i++) await parteOnline(o, i).delete(); await docPdfOnline(o).delete(); } else if (p.tipo === "asset") await apagarAnexo(p); else if (p.tipo === "idb") await idbOp("readwrite", st => st.delete(chavePdf(o))); } catch (e) {} }
+/* anexos do cliente na proposta (documento, foto ou PDF) */
+const ANX_ACCEPT = "image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.dwg,.dxf,.step,.stp,.iges,.igs";
+const tamTxt = b => b >= 1048576 ? (b / 1048576).toLocaleString("pt-BR", {maximumFractionDigits: 1}) + " MB" : Math.max(1, Math.round((b || 0) / 1024)).toLocaleString("pt-BR") + " KB";
+const anxDoc = (a, i) => fbStore.doc(`${ESPACO}/dados/anx_${a.id}${i == null ? "" : "_" + i}`);
+const anexoEmUso = a => DB.orcamentos.some(o => (o.anexos || []).some(x => x.id === a.id)) || DB.lixeira.some(l => l.k === "orcamentos" && (l.item.anexos || []).some(x => x.id === a.id));
+async function guardarAnexoProp(f){
+  if (f.size > 15 * 1048576) throw new Error("passa de 15 MB.");
+  const a = {id: uid(), nome: f.name, tamanho: f.size, mime: f.type || "application/octet-stream"};
+  if (ONLINE) { const b64 = await b64DeBlob(f), T = 900000, partes = Math.max(1, Math.ceil(b64.length / T));
+    for (let i = 0; i < partes; i++) await anxDoc(a, i).set({b64: b64.slice(i * T, (i + 1) * T)});
+    await anxDoc(a).set({partes, nome: a.nome, mime: a.mime}); return {...a, tipo: "fb", partes}; }
+  if (!FORA) { const as = window.claude && claude.use ? await claude.use("assets") : null; if (!as) throw new Error("anexos não estão disponíveis nesta visualização.");
+    const r = await as.upload(f); return {...a, tipo: "asset", aid: r.id, url: r.url}; }
+  await idbOp("readwrite", st => st.put(f, "anx_" + a.id)); return {...a, tipo: "idb"};
+}
+async function lerAnexoProp(a){
+  if (!a) return null;
+  if (a.tipo === "fb") { if (!fbStore) return null; let b64 = ""; for (let i = 0; i < (a.partes || 1); i++) { const sn = await anxDoc(a, i).get(); if (!sn.exists) return null; b64 += sn.data().b64 || ""; }
+    const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new Blob([u], {type: a.mime}); }
+  if (a.tipo === "asset") { const r = await fetch(a.url); return r.ok ? new Blob([await r.blob()], {type: a.mime}) : null; }
+  if (a.tipo === "idb") return (await idbOp("readonly", st => st.get("anx_" + a.id))) || null;
+  return null;
+}
+async function apagarAnexoProp(a){ try { if (a.tipo === "fb" && fbStore) { for (let i = 0; i < (a.partes || 1); i++) await anxDoc(a, i).delete(); await anxDoc(a).delete(); } else if (a.tipo === "asset") await apagarAnexo({id: a.aid}); else if (a.tipo === "idb") await idbOp("readwrite", st => st.delete("anx_" + a.id)); } catch (e) {} }
+async function baixarAnexoProp(a, b){ if (!a) return; const txt = b.textContent; b.disabled = true; b.textContent = "Baixando…";
+  try { const blob = await lerAnexoProp(a); if (!blob) return toast("Anexo não encontrado."); const r = await salvarArquivo(a.nome, blob, {desc: "Arquivo", mime: a.mime || "application/octet-stream"}); if (r === "erro") toast("Não foi possível salvar o arquivo aqui."); }
+  catch (e) { toast("Não foi possível abrir o anexo."); } finally { b.disabled = false; b.textContent = txt; } }
 V.pdfs = () => {
   const L = S.orcamentos.filter(o => o.pdf).sort((a, b) => (b.pdf.em || "").localeCompare(a.pdf.em || ""));
   const quando = t => t ? new Date(t).toLocaleString("pt-BR", {dateStyle: "short", timeStyle: "short"}) : "—";
   return `<div class="top"><div><h1>Propostas em PDF</h1><div class="sub">O último PDF gerado de cada proposta fica guardado aqui. Ao gerar de novo pela aba Orçamentos, o arquivo é substituído; ao apagar a proposta, ele sai daqui.</div></div></div>
-  <div class="panel">${L.length ? `<div class="tw"><table><thead><tr><th>Nº</th>${SEL === "todos" ? "<th>Cliente</th>" : ""}<th>Projeto</th><th>Arquivo</th><th>Gerado em</th><th class="n">Tamanho</th><th></th></tr></thead><tbody>${L.map(o => `<tr><td>${numOrc(o)}${o.rev ? " R" + o.rev : ""}</td>${SEL === "todos" ? `<td>${esc(clienteObj(o.cliente).nome || "")}</td>` : ""}<td>${esc(o.projeto)}</td><td>${esc(o.pdf.nome)}</td><td>${quando(o.pdf.em)}</td><td class="n">${Math.max(1, Math.round((o.pdf.tamanho || 0) / 1024)).toLocaleString("pt-BR")} KB</td><td style="text-align:right"><button class="btn sm" type="button" data-pdf="${o.id}">Baixar</button></td></tr>`).join("")}</tbody></table></div>`
+  <div class="panel">${L.length ? `<div class="tw"><table><thead><tr><th>Nº</th>${SEL === "todos" ? "<th>Cliente</th>" : ""}<th>Projeto</th><th>Arquivo</th><th>Gerado em</th><th class="n">Tamanho</th><th></th></tr></thead><tbody>${L.map(o => `<tr><td>${numBase(o)}${o.rev ? " R" + o.rev : ""}</td>${SEL === "todos" ? `<td>${esc(clienteObj(o.cliente).nome || "")}</td>` : ""}<td>${esc(grupoDe(o).map(x => x.projeto).join(" + "))}</td><td>${esc(o.pdf.nome)}</td><td>${quando(o.pdf.em)}</td><td class="n">${Math.max(1, Math.round((o.pdf.tamanho || 0) / 1024)).toLocaleString("pt-BR")} KB</td><td style="text-align:right"><button class="btn sm" type="button" data-pdf="${o.id}">Baixar</button></td></tr>`).join("")}</tbody></table></div>`
     : `<p class="empty"><b>Nenhum PDF guardado ainda.</b> Ao gerar uma proposta, ou gerar de novo pela aba <a href="#orcamentos">Orçamentos</a>, o PDF aparece aqui.</p>`}</div>`;
 };
 V.pdfs.bind = () => document.querySelectorAll("[data-pdf]").forEach(b => b.onclick = async e => { e.stopPropagation(); const o = DB.orcamentos.find(x => x.id === b.dataset.pdf); if (!o) return;
